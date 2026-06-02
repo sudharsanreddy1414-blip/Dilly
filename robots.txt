@@ -1,0 +1,24 @@
+# robots.txt — Dilly Physio Centre
+# https://dillyphysiocentre.in/
+
+User-agent: *
+Allow: /
+
+# Block admin portal from search indexing
+Disallow: /#admin
+Disallow: /admin
+
+# Block internal staff portal hash routes
+Disallow: /*#patients
+Disallow: /*#dashboard
+Disallow: /*#add
+
+# Allow Google Images
+User-agent: Googlebot-Image
+Allow: /
+
+# Sitemap location
+Sitemap: https://dillyphysiocentre.in/sitemap.xml
+
+# Crawl-delay for polite bots
+Crawl-delay: 5
