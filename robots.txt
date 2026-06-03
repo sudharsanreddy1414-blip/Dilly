@@ -1,12 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+User-agent: *
+Allow: /
 
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-
-  <url>
-    <loc>https://dillyphysiocentre.in/</loc>
-    <lastmod>2026-06-03</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-
-</urlset>
+Sitemap: https://dillyphysiocentre.in/sitemap.xml
