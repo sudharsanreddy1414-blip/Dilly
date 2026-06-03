@@ -1,3 +1,6 @@
+# robots.txt — Dilly Physio Centre
+# https://dillyphysiocentre.in/
+
 User-agent: *
 Allow: /
 
