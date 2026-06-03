@@ -31,7 +31,8 @@
 <link rel="canonical" href="https://dillyphysiocentre.in/"/>
 
 <!-- ══ GOOGLE SEARCH CONSOLE VERIFICATION ══ -->
-<meta name="google-site-verification" content="yIiojY94CORJI4Pk-kp85IpLXwpu_XbgxnlOGm1d0j8" />
+<meta name="google-site-verification" content="PASTE_VERIFICATION_CODE_HERE"/>
+
 <!-- ══ OPEN GRAPH (WhatsApp, Facebook, LinkedIn) ══ -->
 <meta property="og:type" content="website"/>
 <meta property="og:site_name" content="Dilly Physio Centre"/>
@@ -1710,6 +1711,27 @@ function renderPatientForm() {
   fld('Next Appointment','nextAppt','date','',p.nextAppt||'') +
   '</div></div>' +
 
+  // 12. BILLING
+  '<div class="adm-card" style="margin-bottom:14px">' +
+  '<div class="assess-section-title">💰 12. Billing / Charges</div>' +
+  '<div class="assess-three">' +
+  '<div class="adm-field-group"><label class="adm-label">Total Amount (₹)</label>' +
+  '<input class="adm-input" name="feeTotal" type="number" placeholder="e.g. 500" value="'+esc(s.feeTotal||'')+'" style="font-size:18px;font-weight:800;color:#0d9488"/></div>' +
+  '<div class="adm-field-group"><label class="adm-label">Payment Mode</label>' +
+  '<select class="adm-input" name="feeMode"><option value="">— Select —</option>' +
+  '<option'+(s.feeMode==='Cash'?' selected':'')+'>Cash</option>' +
+  '<option'+(s.feeMode==='UPI'?' selected':'')+'>UPI</option>' +
+  '<option'+(s.feeMode==='Card'?' selected':'')+'>Card</option>' +
+  '<option'+(s.feeMode==='Free'?' selected':'')+'>Free / Waived</option>' +
+  '</select></div>' +
+  '<div class="adm-field-group"><label class="adm-label">Payment Status</label>' +
+  '<select class="adm-input" name="feePaid"><option value="">— Select —</option>' +
+  '<option'+(s.feePaid==='Paid'?' selected':'')+'>Paid</option>' +
+  '<option'+(s.feePaid==='Pending'?' selected':'')+'>Pending</option>' +
+  '<option'+(s.feePaid==='Partial'?' selected':'')+'>Partial</option>' +
+  '</select></div>' +
+  '</div></div>' +
+
   '<div id="form-msg" style="display:none;padding:14px;border-radius:12px;font-size:14px;margin-bottom:14px"></div>' +
   '<div class="adm-card" style="margin-bottom:24px"><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
   '<button type="submit" class="adm-btn-primary" id="form-submit-btn" style="font-size:15px;padding:13px 28px">💾 '+(editingId?'Update Assessment':'Save Assessment')+'</button>' +
@@ -1859,7 +1881,8 @@ function savePatient(e) {
     restrictedActivities:get('restrictedActivities'),
     investigation:get('investigation'),
     lengthening:get('lengthening'), strengthening:get('strengthening'),
-    modalities:get('treatmentPlan')
+    modalities:get('treatmentPlan'),
+    feeTotal:get('feeTotal'), feeMode:get('feeMode'), feePaid:get('feePaid')
   });
 
   var patient = {
@@ -2070,6 +2093,16 @@ function viewPatient(id) {
       row('Next Appointment', safeDate(p.nextAppt)) +
       row('Last Updated', p.updatedAt||'—')
     ) +
+
+    // ── 12. Billing ──
+    (s.feeTotal || s.feeConsultation ? card('💰 12. Billing / Charges',
+      '<div style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap">' +
+      (s.feeTotal ? '<div style="background:linear-gradient(135deg,#0d9488,#0891b2);border-radius:12px;padding:12px 24px;text-align:center;margin-bottom:4px"><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);letter-spacing:1px">TOTAL AMOUNT</div><div style="font-size:26px;font-weight:900;color:#fff">₹'+esc(s.feeTotal)+'</div></div>' : '') +
+      '</div>' +
+      row('Payment Mode', s.feeMode) +
+      row('Payment Status', s.feePaid ? '<span style="background:'+(s.feePaid==='Paid'?'#dcfce7':s.feePaid==='Pending'?'#fef3c7':'#fce7f3')+';color:'+(s.feePaid==='Paid'?'#166534':s.feePaid==='Pending'?'#92400e':'#9d174d')+';padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700">'+esc(s.feePaid)+'</span>' : '—', true) +
+      row('Notes', s.feeNotes)
+    ) : '') +
 
     // ── Print footer ──
     '<div class="print-only" style="display:none;margin-top:30px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8">' +
@@ -2299,17 +2332,36 @@ function printFromForm() {
   var frontCanvas = document.getElementById('body-front');
   var backCanvas  = document.getElementById('body-back');
   var chartHtml = '';
+  // Try live canvases first (best quality)
   if (frontCanvas && backCanvas) {
     try {
-      var front = frontCanvas.toDataURL('image/jpeg', 0.85);
-      var back  = backCanvas.toDataURL('image/jpeg', 0.85);
+      // Use PNG for better quality on mobile/tablet
+      var front = frontCanvas.toDataURL('image/png');
+      var back  = backCanvas.toDataURL('image/png');
+      // Only include if drawings exist (check if canvas has non-background pixels)
       chartHtml =
-        '<div style="margin:16px 0;padding:14px;border:1px solid #e2e8f0;border-radius:10px">' +
-        '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#0d9488;margin-bottom:10px;text-transform:uppercase">🫀 Body Chart</div>' +
-        '<div style="display:flex;gap:24px;justify-content:center">' +
-        '<div style="text-align:center"><img src="'+front+'" style="width:130px;border-radius:8px;border:1px solid #e2e8f0"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px">FRONT VIEW</div></div>' +
-        '<div style="text-align:center"><img src="'+back+'"  style="width:130px;border-radius:8px;border:1px solid #e2e8f0"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px">BACK VIEW</div></div>' +
+        '<div style="margin:16px 0;padding:14px;border:1px solid #0d9488;border-radius:10px;break-inside:avoid">' +
+        '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#0d9488;margin-bottom:10px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;padding-bottom:6px">Body Chart — Pain Location</div>' +
+        '<div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap">' +
+        '<div style="text-align:center"><img src="'+front+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">FRONT VIEW</div></div>' +
+        '<div style="text-align:center"><img src="'+back+'"  style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">BACK VIEW</div></div>' +
         '</div></div>';
+    } catch(e){ chartHtml = ''; }
+  }
+  // Fallback: try localStorage
+  if (!chartHtml) {
+    try {
+      var stored = localStorage.getItem('dpc_chart_' + (window.viewingPatientId||''));
+      if (stored) {
+        var bc = JSON.parse(stored);
+        chartHtml =
+          '<div style="margin:16px 0;padding:14px;border:1px solid #0d9488;border-radius:10px;break-inside:avoid">' +
+          '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#0d9488;margin-bottom:10px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;padding-bottom:6px">Body Chart — Pain Location</div>' +
+          '<div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap">' +
+          (bc.front?'<div style="text-align:center"><img src="'+bc.front+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">FRONT VIEW</div></div>':'')+
+          (bc.back?'<div style="text-align:center"><img src="'+bc.back+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">BACK VIEW</div></div>':'')+
+          '</div></div>';
+      }
     } catch(e){}
   }
 
@@ -2332,8 +2384,21 @@ function printFromForm() {
   }
 
   var printWin = window.open('','_blank','width=800,height=900');
-  printWin.document.write('<!DOCTYPE html><html><head><title>Assessment — '+get('name')+'</title>'+
-  '<style>body{font-family:Arial,sans-serif;margin:20px;color:#0f172a}@media print{@page{margin:15mm}}</style></head><body>'+
+  if (!printWin) { alert('Please allow popups to print the assessment.'); return; }
+  printWin.document.write('<!DOCTYPE html><html><head>'+
+  '<meta charset="UTF-8"/>'+
+  '<meta name="viewport" content="width=device-width,initial-scale=1.0"/>'+
+  '<title>Assessment — '+get('name')+'</title>'+
+  '<style>'+
+  'body{font-family:Arial,sans-serif;margin:0;padding:16px;color:#0f172a;font-size:13px}'+
+  'img{max-width:100%;height:auto}'+
+  '@media print{'+
+  '  @page{margin:12mm;size:A4}'+
+  '  body{margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  '  .no-print{display:none}'+
+  '}'+
+  '@media screen and (max-width:600px){body{padding:8px;font-size:12px}}'+
+  '</style></head><body>'+
   '<div style="text-align:center;padding-bottom:14px;border-bottom:3px solid #0d9488;margin-bottom:18px">'+
   '<div style="font-size:22px;font-weight:900;color:#0d9488;font-family:Georgia,serif">Dilly Physio Centre</div>'+
   '<div style="font-size:11px;color:#64748b;margin-top:3px">Dr. S. Dilly Babu, MPT (Neuro) · Katpadi, Vellore · Ph: 9360635121</div>'+
@@ -2385,14 +2450,25 @@ function printFromForm() {
   section('11. Appointment',
     row('Visit Date', get('visitDate')) + row('Next Appointment', get('nextAppt'))
   )+
-  '<div style="margin-top:30px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8">'+
+  // Billing section in print
+  (get('feeTotal') ?
+  '<div style="margin-bottom:14px;padding:12px;border:2px solid #0d9488;border-radius:8px;break-inside:avoid">'+
+  '<div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#0d9488;margin-bottom:10px">12. BILLING / CHARGES</div>'+
+  '<div style="display:flex;gap:12px;margin-bottom:10px;align-items:center">'+
+  '<div style="background:linear-gradient(135deg,#0d9488,#0891b2);border-radius:8px;padding:10px 20px;text-align:center"><div style="font-size:9px;font-weight:700;color:rgba(255,255,255,.8)">TOTAL AMOUNT</div><div style="font-size:22px;font-weight:900;color:#fff">&#8377;'+get('feeTotal')+'</div></div>'+
+  '<div><table style="border-collapse:collapse">'+
+  (get('feeMode')?'<tr><td style="padding:3px 10px;font-weight:700;color:#64748b;font-size:11px">Payment Mode</td><td style="padding:3px 10px;font-size:12px;font-weight:700">'+get('feeMode')+'</td></tr>':'')+
+  (get('feePaid')?'<tr><td style="padding:3px 10px;font-weight:700;color:#64748b;font-size:11px">Status</td><td style="padding:3px 10px;font-size:12px;font-weight:700;color:'+(get('feePaid')==='Paid'?'#166534':get('feePaid')==='Pending'?'#92400e':'#9d174d')+'">'+get('feePaid')+'</td></tr>':'')+
+  '</table></div></div></div>' : '')+
+  '<div style="margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:flex-end;font-size:11px;color:#94a3b8">'+
   '<div>Dilly Physio Centre · Katpadi, Vellore · 9360635121</div>'+
-  '<div>Therapist Signature: _______________________</div>'+
-  '</div>'+
+  '<div style="text-align:right"><div>Therapist Signature: _______________________</div>'+
+  (get('feeTotal')?'<div style="margin-top:6px;font-size:13px;font-weight:800;color:#0f172a">Total Paid: &#8377;'+get('feeTotal')+' ('+get('feeMode')+')</div>':'')+
+  '</div></div>'+
   '</body></html>');
   printWin.document.close();
   printWin.focus();
-  setTimeout(function(){ printWin.print(); }, 400);
+  setTimeout(function(){ printWin.print(); }, 800);
 }
 
 /* ══ SPLASH ══ */
