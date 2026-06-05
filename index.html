@@ -1312,20 +1312,57 @@ function apiPost(body, callback) {
   if (bodyToSend.patient && bodyToSend.patient.assessment) {
     try {
       var a = JSON.parse(bodyToSend.patient.assessment);
-      if (a.bodyChartData) {
-        delete a.bodyChartData; // removed — saved in Sheets via Code.gs separately
-        bodyToSend.patient.assessment = JSON.stringify(a);
-      }
+      if (a.bodyChartData) { delete a.bodyChartData; }
+      if (a.bodyChart && a.bodyChart.length > 5000) { delete a.bodyChart; }
+      bodyToSend.patient.assessment = JSON.stringify(a);
     } catch(ex) {}
   }
 
-  // GET + base64 — the only reliable CORS-safe method for Apps Script
+  // GET + base64 — CORS-safe method for Apps Script
   var payload = btoa(unescape(encodeURIComponent(JSON.stringify(bodyToSend))));
-  var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
-  fetch(url)
-    .then(function(r){ return r.json(); })
-    .then(callback)
-    .catch(function(err){ callback({ success: false, error: err.message }); });
+
+  // If payload fits in one URL request (~6000 chars safe limit), send directly
+  if (payload.length <= 6000) {
+    var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(callback)
+      .catch(function(err){ callback({ success: false, error: err.message }); });
+    return;
+  }
+
+  // Payload too large → split into chunks of 4000 chars each
+  var CHUNK_SIZE = 4000;
+  var chunks = [];
+  for (var i = 0; i < payload.length; i += CHUNK_SIZE) {
+    chunks.push(payload.slice(i, i + CHUNK_SIZE));
+  }
+  var total = chunks.length;
+  var chunkId = 'c' + Date.now();
+
+  function sendChunk(index) {
+    if (index >= total) return; // all sent, wait for last response
+    var url = SHEETS_URL
+      + '?method=POST&chunk=' + (index + 1)
+      + '&total=' + total
+      + '&chunkId=' + encodeURIComponent(chunkId)
+      + '&payload=' + encodeURIComponent(chunks[index]);
+
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(function(res) {
+        if (index < total - 1) {
+          // More chunks to send
+          sendChunk(index + 1);
+        } else {
+          // Last chunk — this response has the final result
+          callback(res);
+        }
+      })
+      .catch(function(err){ callback({ success: false, error: err.message }); });
+  }
+
+  sendChunk(0);
 }
 
 /* Load all patients from Sheets into cache */
