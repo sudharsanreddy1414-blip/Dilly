@@ -1307,42 +1307,25 @@ function apiPost(body, callback) {
     callback({ success: false, error: 'setup_needed' }); return;
   }
 
-  // Send full body as POST - no URL length limit
-  // bodyChartData is stored inside patient.assessment JSON
-  // We send it as a SEPARATE saveChart call after the main save (see savePatient)
-  var bodyToSend = JSON.parse(JSON.stringify(body)); // deep clone
-  // Remove bodyChartData from assessment for the main save (keep payload small)
-  var _chartDataForSeparateSave = null;
+  // Deep clone and strip bodyChartData — too large for URL
+  var bodyToSend = JSON.parse(JSON.stringify(body));
   if (bodyToSend.patient && bodyToSend.patient.assessment) {
     try {
       var a = JSON.parse(bodyToSend.patient.assessment);
       if (a.bodyChartData) {
-        _chartDataForSeparateSave = { chart: a.bodyChartData };
-        delete a.bodyChartData;
+        delete a.bodyChartData; // removed — saved in Sheets via Code.gs separately
         bodyToSend.patient.assessment = JSON.stringify(a);
       }
     } catch(ex) {}
   }
 
+  // GET + base64 — the only reliable CORS-safe method for Apps Script
   var payload = btoa(unescape(encodeURIComponent(JSON.stringify(bodyToSend))));
-
-  // Try POST first (no URL length limit), fallback to GET
-  fetch(SHEETS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: payload,
-    redirect: 'follow'
-  })
-  .then(function(r){ return r.json(); })
-  .then(callback)
-  .catch(function() {
-    // Fallback: GET with payload in URL (for older Apps Script deployments)
-    var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
-    fetch(url)
-      .then(function(r){ return r.json(); })
-      .then(callback)
-      .catch(function(err){ callback({ success: false, error: err.message }); });
-  });
+  var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
+  fetch(url)
+    .then(function(r){ return r.json(); })
+    .then(callback)
+    .catch(function(err){ callback({ success: false, error: err.message }); });
 }
 
 /* Load all patients from Sheets into cache */
@@ -2059,19 +2042,20 @@ function saveChart(){
   var bc=document.getElementById('body-back');
   var inp=document.getElementById('body-chart-data');
   if(!fc||!bc) return;
-  // Compress to small jpeg
+  // Compress to very small JPEG (~3KB each) — safe for URL payload
   function compress(canvas){
     var tmp=document.createElement('canvas');
-    tmp.width=90; tmp.height=188;
-    tmp.getContext('2d').drawImage(canvas,0,0,90,188);
-    return tmp.toDataURL('image/jpeg',0.4);
+    tmp.width=80; tmp.height=168;
+    var ctx=tmp.getContext('2d');
+    ctx.fillStyle='#f8fafc'; ctx.fillRect(0,0,80,168);
+    ctx.drawImage(canvas,0,0,80,168);
+    return tmp.toDataURL('image/jpeg',0.3);
   }
-  var chartData = JSON.stringify({front:compress(fc),back:compress(bc)});
-  // Store in _pendingChartData so savePatient can include it in assessment JSON
-  window._pendingChartData = chartData;
-  // Also keep in hidden input for print access
-  if(inp) inp.value = chartData;
+  var chartData=JSON.stringify({front:compress(fc),back:compress(bc)});
+  window._pendingChartData=chartData;
+  if(inp) inp.value=chartData; // put in form so savePatient can include it
 }
+
 function clearChart(){var fc=document.getElementById('body-front'),bc=document.getElementById('body-back');if(fc)drawBody(fc.getContext('2d'),'front',fc.width,fc.height);if(bc)drawBody(bc.getContext('2d'),'back',bc.width,bc.height);var inp=document.getElementById('body-chart-data');if(inp)inp.value='';}
 function handleUpload(input){var f=input.files[0];if(!f)return;document.getElementById('upload-zone').classList.add('has-file');document.getElementById('file-preview').style.display='block';document.getElementById('file-name').textContent=f.name+' ('+(f.size/1024).toFixed(0)+' KB)';}
 function fld(label,name,type,ph,val,req,extra){
@@ -2097,12 +2081,10 @@ function savePatient(e) {
   btn.disabled = true;
   btn.innerHTML = editingId ? '⏳ Updating…' : '⏳ Saving…';
 
-  // Build assessment JSON — includes bodyChart so it works on any device
-  var _chartData = '';
-  try {
-    if (window._pendingChartData) { _chartData = window._pendingChartData; }
-    else if (editingId) { _chartData = localStorage.getItem('dpc_chart_' + editingId) || ''; }
-  } catch(ex) {}
+  // Chart loaded from hidden input by saveChart()
+  // Body chart — get from hidden input (already compressed by saveChart)
+  var bodyChartVal = get('bodyChart') || window._pendingChartData || '';
+
   var assessmentJSON = JSON.stringify({
     occupation:get('occupation'), bp:get('bp'), dm:get('dm'),
     thyroid:get('thyroid'), implants:get('implants'),
@@ -2112,12 +2094,12 @@ function savePatient(e) {
     aggravating:get('aggravating'), relieving:get('relieving'),
     weakMuscles:get('weakMuscles'), tightMuscles:get('tightMuscles'),
     painScale:get('painScale'),
+    bodyChart:bodyChartVal,
     restrictedActivities:get('restrictedActivities'),
     investigation:get('investigation'),
     lengthening:get('lengthening'), strengthening:get('strengthening'),
     modalities:get('treatmentPlan'),
-    feeTotal:get('feeTotal'), feeMode:get('feeMode'), feePaid:get('feePaid'),
-    bodyChartData:_chartData
+    feeTotal:get('feeTotal'), feeMode:get('feeMode'), feePaid:get('feePaid')
   });
 
   var patient = {
@@ -2141,25 +2123,7 @@ function savePatient(e) {
           localStorage.setItem('dpc_chart_latest', JSON.stringify({id:patientId, data:window._pendingChartData}));
         }catch(ex){}
       }
-      // Save chart to Google Sheets as a dedicated column (cross-device)
-      var chartToUpload = window._pendingChartData || '';
-      if(chartToUpload && patientId && isConnected()){
-        try {
-          var chartPayload = btoa(unescape(encodeURIComponent(JSON.stringify({
-            action: 'saveChart',
-            patientId: patientId,
-            chartData: chartToUpload
-          }))));
-          fetch(SHEETS_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: chartPayload,
-            redirect: 'follow'
-          }).catch(function(){
-            // Chart upload failed silently - already in localStorage
-          });
-        } catch(ex) {}
-      }
+      // Chart is included in assessmentJSON above
       window._pendingChartData = null;
       msg.style.display='block';msg.style.background='#f0fdf9';msg.style.border='1px solid #6ee7b7';msg.style.color='#065f46';
       msg.innerHTML='✅ Assessment '+(editingId?'updated':'saved')+' successfully!';
