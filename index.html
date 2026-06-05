@@ -1306,14 +1306,43 @@ function apiPost(body, callback) {
   if (!SHEETS_URL || SHEETS_URL === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL') {
     callback({ success: false, error: 'setup_needed' }); return;
   }
-  // Body chart is stored in localStorage — never sent to server
-  // Payload is always small now — safe for GET URL
-  var payload = btoa(unescape(encodeURIComponent(JSON.stringify(body))));
-  var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
-  fetch(url)
-    .then(function(r){ return r.json(); })
-    .then(callback)
-    .catch(function(err){ callback({ success: false, error: err.message }); });
+
+  // Send full body as POST - no URL length limit
+  // bodyChartData is stored inside patient.assessment JSON
+  // We send it as a SEPARATE saveChart call after the main save (see savePatient)
+  var bodyToSend = JSON.parse(JSON.stringify(body)); // deep clone
+  // Remove bodyChartData from assessment for the main save (keep payload small)
+  var _chartDataForSeparateSave = null;
+  if (bodyToSend.patient && bodyToSend.patient.assessment) {
+    try {
+      var a = JSON.parse(bodyToSend.patient.assessment);
+      if (a.bodyChartData) {
+        _chartDataForSeparateSave = { chart: a.bodyChartData };
+        delete a.bodyChartData;
+        bodyToSend.patient.assessment = JSON.stringify(a);
+      }
+    } catch(ex) {}
+  }
+
+  var payload = btoa(unescape(encodeURIComponent(JSON.stringify(bodyToSend))));
+
+  // Try POST first (no URL length limit), fallback to GET
+  fetch(SHEETS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: payload,
+    redirect: 'follow'
+  })
+  .then(function(r){ return r.json(); })
+  .then(callback)
+  .catch(function() {
+    // Fallback: GET with payload in URL (for older Apps Script deployments)
+    var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(callback)
+      .catch(function(err){ callback({ success: false, error: err.message }); });
+  });
 }
 
 /* Load all patients from Sheets into cache */
@@ -1926,17 +1955,29 @@ function renderPatientForm() {
 
   setTimeout(function(){
     updatePain(ps);
-    // Load chart: first from assessment JSON (cross-device), then localStorage (fallback)
+    // Load chart: localStorage (instant) → assessment JSON → Sheets API (cross-device)
     var chartData = '';
     if(editingId){
-      // Primary: from assessment data (works on any device)
-      try { if(s && s.bodyChartData) { chartData = s.bodyChartData; } } catch(ex){}
-      // Fallback: localStorage
-      if(!chartData){ try{ chartData = localStorage.getItem('dpc_chart_'+editingId)||''; }catch(ex){} }
-      // Also cache to localStorage for offline use
+      try{ chartData = localStorage.getItem('dpc_chart_'+editingId)||''; }catch(ex){}
+      if(!chartData){ try { if(s && s.bodyChartData) { chartData = s.bodyChartData; } } catch(ex){} }
       if(chartData){ try{ localStorage.setItem('dpc_chart_'+editingId, chartData); }catch(ex){} }
     }
     initChart(chartData);
+    // Async: fetch chart from Sheets if not found locally (cross-device access)
+    if(!chartData && editingId && isConnected()){
+      try {
+        var _eid = editingId;
+        fetch(SHEETS_URL + '?action=getChart&patientId=' + encodeURIComponent(_eid))
+          .then(function(r){ return r.json(); })
+          .then(function(resp){
+            if(resp && resp.success && resp.chartData){
+              try{ localStorage.setItem('dpc_chart_'+_eid, resp.chartData); }catch(ex){}
+              initChart(resp.chartData);
+            }
+          })
+          .catch(function(){});
+      } catch(ex){}
+    }
   }, 60);
 }
 
@@ -2026,10 +2067,10 @@ function saveChart(){
     return tmp.toDataURL('image/jpeg',0.4);
   }
   var chartData = JSON.stringify({front:compress(fc),back:compress(bc)});
-  // Store in localStorage — NOT sent to server (too large for URL)
-  // Will be keyed by patient ID after save
+  // Store in _pendingChartData so savePatient can include it in assessment JSON
   window._pendingChartData = chartData;
-  if(inp) inp.value = ''; // don't put in payload
+  // Also keep in hidden input for print access
+  if(inp) inp.value = chartData;
 }
 function clearChart(){var fc=document.getElementById('body-front'),bc=document.getElementById('body-back');if(fc)drawBody(fc.getContext('2d'),'front',fc.width,fc.height);if(bc)drawBody(bc.getContext('2d'),'back',bc.width,bc.height);var inp=document.getElementById('body-chart-data');if(inp)inp.value='';}
 function handleUpload(input){var f=input.files[0];if(!f)return;document.getElementById('upload-zone').classList.add('has-file');document.getElementById('file-preview').style.display='block';document.getElementById('file-name').textContent=f.name+' ('+(f.size/1024).toFixed(0)+' KB)';}
@@ -2092,16 +2133,34 @@ function savePatient(e) {
     btn.disabled=false;
     btn.innerHTML = editingId?'💾 Update Assessment':'💾 Save Assessment';
     if(res.success){
-      // Save body chart to localStorage
       var patientId = res.id || editingId;
+      // Save chart to localStorage for offline access
       if(window._pendingChartData && patientId){
         try{
           localStorage.setItem('dpc_chart_'+patientId, window._pendingChartData);
-          // Also save under 'latest' key as fallback
           localStorage.setItem('dpc_chart_latest', JSON.stringify({id:patientId, data:window._pendingChartData}));
         }catch(ex){}
-        window._pendingChartData = null;
       }
+      // Save chart to Google Sheets as a dedicated column (cross-device)
+      var chartToUpload = window._pendingChartData || '';
+      if(chartToUpload && patientId && isConnected()){
+        try {
+          var chartPayload = btoa(unescape(encodeURIComponent(JSON.stringify({
+            action: 'saveChart',
+            patientId: patientId,
+            chartData: chartToUpload
+          }))));
+          fetch(SHEETS_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: chartPayload,
+            redirect: 'follow'
+          }).catch(function(){
+            // Chart upload failed silently - already in localStorage
+          });
+        } catch(ex) {}
+      }
+      window._pendingChartData = null;
       msg.style.display='block';msg.style.background='#f0fdf9';msg.style.border='1px solid #6ee7b7';msg.style.color='#065f46';
       msg.innerHTML='✅ Assessment '+(editingId?'updated':'saved')+' successfully!';
       toast('✅ Assessment '+(editingId?'updated':'saved')+' successfully!');
@@ -2259,18 +2318,18 @@ function viewPatient(id) {
     // ── 8b. Body Chart — loaded from localStorage ──
     (function(){
       try {
-        // Primary: from assessment JSON (cross-device)
-        var chartRaw = (s && s.bodyChartData) ? s.bodyChartData : '';
-        // Fallback: localStorage exact patient ID
-        if(!chartRaw){ try{ chartRaw = localStorage.getItem('dpc_chart_' + p.id) || ''; }catch(ex){} }
-        // Fallback: 'latest' key
+        // Try localStorage first (instant)
+        var chartRaw = '';
+        try{ chartRaw = localStorage.getItem('dpc_chart_' + p.id) || ''; }catch(ex){}
+        // Try assessment JSON
+        if(!chartRaw){ chartRaw = (s && s.bodyChartData) ? s.bodyChartData : ''; }
+        // Try latest key
         if(!chartRaw){
           try {
             var latest = localStorage.getItem('dpc_chart_latest');
             if(latest){ var latestObj = JSON.parse(latest); if(latestObj.id === p.id) chartRaw = latestObj.data; }
           } catch(ex){}
         }
-        // Cache to localStorage if loaded from JSON
         if(chartRaw){ try{ localStorage.setItem('dpc_chart_' + p.id, chartRaw); }catch(ex){} }
         if(!chartRaw) return '';
         var bc = JSON.parse(chartRaw);
@@ -2547,44 +2606,53 @@ function smartPrint() {
 
 
 /* Print directly from assessment form with live canvas */
+function buildChartHtml(bc) {
+  if (!bc) return '';
+  return '<div style="margin:16px 0;padding:14px;border:1px solid #0d9488;border-radius:10px;break-inside:avoid">' +
+    '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#0d9488;margin-bottom:10px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;padding-bottom:6px">Body Chart — Pain Location</div>' +
+    '<div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap">' +
+    (bc.front ? '<div style="text-align:center"><img src="'+bc.front+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">FRONT VIEW</div></div>' : '') +
+    (bc.back  ? '<div style="text-align:center"><img src="'+bc.back+'"  style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">BACK VIEW</div></div>' : '') +
+    '</div></div>';
+}
+
 function printFromForm() {
-  // Grab live canvas data
-  var frontCanvas = document.getElementById('body-front');
-  var backCanvas  = document.getElementById('body-back');
   var chartHtml = '';
-  // Try live canvases first (best quality)
-  if (frontCanvas && backCanvas) {
-    try {
-      // Use PNG for better quality on mobile/tablet
-      var front = frontCanvas.toDataURL('image/png');
-      var back  = backCanvas.toDataURL('image/png');
-      // Only include if drawings exist (check if canvas has non-background pixels)
-      chartHtml =
-        '<div style="margin:16px 0;padding:14px;border:1px solid #0d9488;border-radius:10px;break-inside:avoid">' +
-        '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#0d9488;margin-bottom:10px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;padding-bottom:6px">Body Chart — Pain Location</div>' +
-        '<div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap">' +
-        '<div style="text-align:center"><img src="'+front+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">FRONT VIEW</div></div>' +
-        '<div style="text-align:center"><img src="'+back+'"  style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">BACK VIEW</div></div>' +
-        '</div></div>';
-    } catch(e){ chartHtml = ''; }
-  }
-  // Fallback: try localStorage (exact ID or latest)
+
+  // Source 1: hidden input (set by saveChart on draw)
+  try {
+    var _inp = document.getElementById('body-chart-data');
+    if (_inp && _inp.value) { chartHtml = buildChartHtml(JSON.parse(_inp.value)); }
+  } catch(e) {}
+
+  // Source 2: _pendingChartData (in-memory, set when user draws on canvas)
   if (!chartHtml) {
     try {
-      var _pid = window.viewingPatientId||'';
+      if (window._pendingChartData) { chartHtml = buildChartHtml(JSON.parse(window._pendingChartData)); }
+    } catch(e) {}
+  }
+
+  // Source 3: live canvas capture (patient is being edited)
+  if (!chartHtml) {
+    var frontCanvas = document.getElementById('body-front');
+    var backCanvas  = document.getElementById('body-back');
+    if (frontCanvas && backCanvas) {
+      try {
+        chartHtml = buildChartHtml({ front: frontCanvas.toDataURL('image/jpeg',0.7), back: backCanvas.toDataURL('image/jpeg',0.7) });
+      } catch(e) {}
+    }
+  }
+  // Source 4: localStorage fallback (same device only)
+  if (!chartHtml) {
+    try {
+      var _pid = window.viewingPatientId || editingId || '';
       var stored = localStorage.getItem('dpc_chart_' + _pid);
-      if(!stored){ var _l=localStorage.getItem('dpc_chart_latest'); if(_l){var _lo=JSON.parse(_l);if(_lo.id===_pid||!_pid)stored=_lo.data;} }
-      if (stored) {
-        var bc = JSON.parse(stored);
-        chartHtml =
-          '<div style="margin:16px 0;padding:14px;border:1px solid #0d9488;border-radius:10px;break-inside:avoid">' +
-          '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#0d9488;margin-bottom:10px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;padding-bottom:6px">Body Chart — Pain Location</div>' +
-          '<div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap">' +
-          (bc.front?'<div style="text-align:center"><img src="'+bc.front+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">FRONT VIEW</div></div>':'')+
-          (bc.back?'<div style="text-align:center"><img src="'+bc.back+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">BACK VIEW</div></div>':'')+
-          '</div></div>';
+      if (!stored) {
+        var _l = localStorage.getItem('dpc_chart_latest');
+        if (_l) { var _lo = JSON.parse(_l); if (_lo.id===_pid||!_pid) stored = _lo.data; }
       }
-    } catch(e){}
+      if (stored) { chartHtml = buildChartHtml(JSON.parse(stored)); }
+    } catch(e) {}
   }
 
   var f = document.getElementById('adm-pt-form');
@@ -2607,22 +2675,7 @@ function printFromForm() {
 
   var printWin = window.open('','_blank','width=800,height=900');
   if (!printWin) { alert('Please allow popups to print the assessment.'); return; }
-  // Get chart from patient data (works on any device, not just saved device)
-  if (!chartHtml) {
-    try {
-      var _formEl = document.getElementById('adm-pt-form');
-      var _chartInp = _formEl ? _formEl.elements['bodyChartData'] : null;
-      if (_chartInp && _chartInp.value) {
-        var _bc2 = JSON.parse(_chartInp.value);
-        chartHtml = '<div style="margin:16px 0;padding:14px;border:1px solid #0d9488;border-radius:10px;break-inside:avoid">'+
-          '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:#0d9488;margin-bottom:10px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;padding-bottom:6px">Body Chart — Pain Location</div>'+
-          '<div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap">'+
-          (_bc2.front?'<div style="text-align:center"><img src="'+_bc2.front+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">FRONT VIEW</div></div>':'')+
-          (_bc2.back?'<div style="text-align:center"><img src="'+_bc2.back+'" style="width:150px;height:auto;border-radius:8px;border:1px solid #e2e8f0;display:block"/><div style="font-size:9px;font-weight:700;color:#64748b;margin-top:4px;letter-spacing:1px">BACK VIEW</div></div>':'')+
-          '</div></div>';
-      }
-    } catch(ex) {}
-  }
+
 
   printWin.document.write('<!DOCTYPE html><html><head>'+
   '<meta charset="UTF-8"/>'+
