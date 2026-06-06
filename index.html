@@ -1777,7 +1777,7 @@ function applyFilters() {
         '<td>'+(p.nextAppt?'<span class="adm-appt-badge">'+fmt(p.nextAppt)+'</span>':'<span style="color:#94a3b8">—</span>')+'</td>' +
         '<td><div style="display:flex;gap:4px">' +
         '<button class="adm-icon-btn" onclick="viewPatient(\''+esc(p.id)+'\')">👁️</button>' +
-        '<button class="adm-icon-btn" onclick="openEditForm(\''+esc(p.id)+'\')">✏️</button>' +
+        '<button class="adm-icon-btn" onclick="console.log('EDIT CLICKED', '"+esc(p.id)+"'); openEditForm('"+esc(p.id)+"')">✏️</button>' +
         '<button class="adm-icon-btn" onclick="sendWAReminder(\''+esc(p.id)+'\')">💬</button>' +
         '<button class="adm-icon-btn danger" onclick="deletePatient(\''+esc(p.id)+'\')">🗑️</button>' +
         '</div></td></tr>';
@@ -1788,8 +1788,12 @@ function applyFilters() {
    ADD / EDIT FORM
 ══════════════════════════════════════════════════════ */
 function openAddForm()      { editingId=null; renderAdmin('add'); }
-function openEditForm(id)   { editingId=id;   renderAdmin('add'); }
-
+function openEditForm(id) {
+    console.log("openEditForm id =", id);
+    editingId = id;
+    console.log("editingId set to =", editingId);
+    renderAdmin('add');
+}
 function renderPatientForm() {
   var p = editingId ? (patientCache.find(function(x){return x.id===editingId;})||{}) : {};
   console.log("renderPatientForm editingId =", editingId);
@@ -2274,7 +2278,7 @@ function viewPatient(id) {
     '<div style="color:#94a3b8;font-size:12px;margin-top:2px">' + esc(p.address||'') + '</div>' +
     '<div style="color:#cbd5e1;font-size:11px;margin-top:2px">ID: ' + esc(p.id) + '</div></div></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-    '<button class="adm-btn-primary" onclick="openEditForm(\'' + esc(p.id) + '\')">✏️ Edit</button>' +
+    '<button class="adm-btn-primary" onclick="console.log('EDIT CLICKED', '"+esc(p.id)+"'); openEditForm('"+esc(p.id)+"')">✏️ Edit</button>' +
     '<button class="adm-btn-sm" onclick="smartPrint()">🖨️ Print</button>' +
     '<button class="adm-btn-sm" style="background:#25d366;color:#fff;border-color:#25d366" onclick="sendAssessmentWA(\'' + esc(p.id) + '\')">📲 Send Assessment</button>' +
     '<button class="adm-btn-sm" onclick="sendWAReminder(\'' + esc(p.id) + '\')">📅 WA Reminder</button>' +
@@ -2447,7 +2451,7 @@ function renderAppointments() {
             '<td><span class="adm-appt-badge">'+fmt(p.nextAppt)+'</span></td>' +
             (isPast?'':'<td><span style="font-weight:700;color:'+color+'">'+label+'</span></td>') +
             '<td><button class="adm-icon-btn" onclick="sendWAReminder(\''+esc(p.id)+'\')">💬</button> '+
-            (isPast?'<button class="adm-icon-btn" onclick="openEditForm(\''+esc(p.id)+'\')">✏️ Reschedule</button>':'<button class="adm-icon-btn" onclick="viewPatient(\''+esc(p.id)+'\')">👁️</button>')+
+            (isPast?'<button class="adm-icon-btn" onclick="console.log('EDIT CLICKED', '"+esc(p.id)+"'); openEditForm('"+esc(p.id)+"')">✏️ Reschedule</button>':'<button class="adm-icon-btn" onclick="viewPatient(\''+esc(p.id)+'\')">👁️</button>')+
             '</td></tr>';
         }).join('')+'</tbody></table></div>';
     }
