@@ -1296,7 +1296,10 @@ function apiGet(params, callback) {
   var url = SHEETS_URL + '?' + Object.keys(params).map(function(k){
     return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);
   }).join('&');
-  fetch(url)
+  fetch(url, {
+  method: 'GET',
+  redirect: 'follow'
+})
     .then(function(r){ return r.json(); })
     .then(callback)
     .catch(function(err){ callback({ success: false, error: err.message }); });
@@ -1324,7 +1327,10 @@ function apiPost(body, callback) {
   // If payload fits in one URL request (~6000 chars safe limit), send directly
   if (payload.length <= 6000) {
     var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
-    fetch(url)
+    fetch(url, {
+  method: 'GET',
+  redirect: 'follow'
+})
       .then(function(r){ return r.json(); })
       .then(callback)
       .catch(function(err){ callback({ success: false, error: err.message }); });
@@ -1348,7 +1354,10 @@ function apiPost(body, callback) {
       + '&chunkId=' + encodeURIComponent(chunkId)
       + '&payload=' + encodeURIComponent(chunks[index]);
 
-    fetch(url)
+    fetch(url, {
+  method: 'GET',
+  redirect: 'follow'
+})
       .then(function(r){ return r.json(); })
       .then(function(res) {
         if (index < total - 1) {
