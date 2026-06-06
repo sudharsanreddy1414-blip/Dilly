@@ -1792,6 +1792,7 @@ function openEditForm(id)   { editingId=id;   renderAdmin('add'); }
 
 function renderPatientForm() {
   var p = editingId ? (patientCache.find(function(x){return x.id===editingId;})||{}) : {};
+  console.log("renderPatientForm editingId =", editingId);
   var condOpts = ['Neck Pain','Shoulder Pain','Back Pain','Knee Pain','Heel Pain','Muscle Strain','Ligament Sprain','ACL Rehab','Stroke Rehab','Parkinson Disease','Mobility Training','Head Injury','CP Child','OA Knee','Rotator Cuff Injury','Disc Bulge','Post-Operative','Other'];
   var s = {};
   try { if(p.assessment) s = JSON.parse(p.assessment); } catch(e){}
@@ -2149,15 +2150,30 @@ function savePatient(e) {
   });
 
   var patient = {
-    id:editingId||'', name:get('name'), age:get('age'), gender:get('gender'),
-    phone:get('phone'), address:get('address'), condition:get('condition'),
-    painArea:get('painArea'), diagnosis:get('diagnosis'),
-    assessment:assessmentJSON, treatmentPlan:get('treatmentPlan'),
+    id: editingId||'',
+    name:get('name'),
+    age:get('age'),
+    gender:get('gender'),
+    phone:get('phone'),
+    address:get('address'),
+    condition:get('condition'),
+    painArea:get('painArea'),
+    diagnosis:get('diagnosis'),
+    assessment:assessmentJSON,
+    treatmentPlan:get('treatmentPlan'),
     progressNotes:get('restrictedActivities'),
-    visitDate:get('visitDate'), nextAppt:get('nextAppt')
-  };
+    visitDate:get('visitDate'),
+    nextAppt:get('nextAppt')
+};
 
-  apiPost({action:editingId?'update':'add', patient:patient}, function(res){
+console.log("editingId =", editingId);
+console.log("patient.id =", patient.id);
+console.log("patient =", patient);
+
+apiPost({
+    action: editingId ? 'update' : 'add',
+    patient: patient
+}, function(res){
     btn.disabled=false;
     btn.innerHTML = editingId?'💾 Update Assessment':'💾 Save Assessment';
     if(res.success){
