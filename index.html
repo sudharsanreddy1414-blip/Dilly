@@ -1296,10 +1296,7 @@ function apiGet(params, callback) {
   var url = SHEETS_URL + '?' + Object.keys(params).map(function(k){
     return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);
   }).join('&');
-  fetch(url, {
-  method: 'GET',
-  redirect: 'follow'
-})
+  fetch(url)
     .then(function(r){ return r.json(); })
     .then(callback)
     .catch(function(err){ callback({ success: false, error: err.message }); });
@@ -1316,7 +1313,7 @@ function apiPost(body, callback) {
     try {
       var a = JSON.parse(bodyToSend.patient.assessment);
       if (a.bodyChartData) { delete a.bodyChartData; }
-      if (a.bodyChart && a.bodyChart.length > 5000) { delete a.bodyChart; }
+      if (a.bodyChart && a.bodyChart.length > 15000) { delete a.bodyChart; } // compressed chart ~6-8KB is ok
       bodyToSend.patient.assessment = JSON.stringify(a);
     } catch(ex) {}
   }
@@ -1327,10 +1324,7 @@ function apiPost(body, callback) {
   // If payload fits in one URL request (~6000 chars safe limit), send directly
   if (payload.length <= 6000) {
     var url = SHEETS_URL + '?method=POST&payload=' + encodeURIComponent(payload);
-    fetch(url, {
-  method: 'GET',
-  redirect: 'follow'
-})
+    fetch(url)
       .then(function(r){ return r.json(); })
       .then(callback)
       .catch(function(err){ callback({ success: false, error: err.message }); });
@@ -1354,10 +1348,7 @@ function apiPost(body, callback) {
       + '&chunkId=' + encodeURIComponent(chunkId)
       + '&payload=' + encodeURIComponent(chunks[index]);
 
-    fetch(url, {
-  method: 'GET',
-  redirect: 'follow'
-})
+    fetch(url)
       .then(function(r){ return r.json(); })
       .then(function(res) {
         if (index < total - 1) {
@@ -1788,7 +1779,19 @@ function applyFilters() {
    ADD / EDIT FORM
 ══════════════════════════════════════════════════════ */
 function openAddForm()      { editingId=null; renderAdmin('add'); }
-function openEditForm(id)   { editingId=id;   renderAdmin('add'); }
+function openEditForm(id) {
+  var found = patientCache.find(function(x){ return x.id===id; });
+  if(!found && isConnected()) {
+    // Cache miss — reload then open form
+    loadPatients(function(){
+      editingId = id;
+      renderAdmin('add');
+    });
+  } else {
+    editingId = id;
+    renderAdmin('add');
+  }
+}
 
 function renderPatientForm() {
   var p = editingId ? (patientCache.find(function(x){return x.id===editingId;})||{}) : {};
@@ -2162,27 +2165,37 @@ function savePatient(e) {
     btn.innerHTML = editingId?'💾 Update Assessment':'💾 Save Assessment';
     if(res.success){
       var patientId = res.id || editingId;
-      // Save chart to localStorage for offline access
+      // Save chart to localStorage
       if(window._pendingChartData && patientId){
         try{
           localStorage.setItem('dpc_chart_'+patientId, window._pendingChartData);
           localStorage.setItem('dpc_chart_latest', JSON.stringify({id:patientId, data:window._pendingChartData}));
         }catch(ex){}
+        window._pendingChartData = null;
       }
-      // Chart is included in assessmentJSON above
-      window._pendingChartData = null;
       msg.style.display='block';msg.style.background='#f0fdf9';msg.style.border='1px solid #6ee7b7';msg.style.color='#065f46';
-      var _savedPid = patientId;
-      var _savedPhone = get('phone');
-      var _savedName = get('name');
-      msg.innerHTML =
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-        '<span>✅ Assessment '+(editingId?'updated':'saved')+' successfully!</span>' +
-        '<button onclick="sendAssessmentWA(\'' + _savedPid + '\')" style="background:#25d366;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px">📲 Send to Patient WhatsApp</button>' +
-        '<button onclick="printFromForm()" style="background:#0d9488;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px">🖨️ Print Assessment</button>' +
-        '</div>';
-      toast('✅ Assessment '+(editingId?'updated':'saved')+' successfully!');
-      loadPatients(function(){ editingId=null; setTimeout(function(){viewPatient(_savedPid);},2500); });
+      msg.innerHTML='✅ Assessment '+(editingId?'updated':'saved')+' successfully!';
+      var _wasEditing = !!editingId;
+      toast('✅ Assessment '+(_wasEditing?'updated':'saved')+' successfully!');
+      msg.innerHTML='✅ Assessment '+(_wasEditing?'updated':'saved')+' successfully! &nbsp;<button onclick="sendWAReminder(\''+patientId+'\');return false;" style="background:#25d366;color:#fff;border:none;padding:4px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">💬 Send on WhatsApp</button>';
+      var savedEditingId = editingId;
+      editingId = null;
+      // Load fresh patient list, then navigate to the saved patient
+      loadPatients(function(patients){
+        var found = patients.find(function(x){ return x.id === patientId; });
+        if(found){
+          viewPatient(patientId);
+        } else {
+          // Patient not in cache yet (slow Sheets write) — retry once after 1.5s
+          setTimeout(function(){
+            loadPatients(function(pts){
+              var f2 = pts.find(function(x){ return x.id === patientId; });
+              if(f2){ viewPatient(patientId); }
+              else { renderAdmin('patients'); toast('✅ Saved! Tap the patient to view.'); }
+            });
+          }, 1500);
+        }
+      });
     } else {
       msg.style.display='block';msg.style.background='#fef2f2';msg.style.border='1px solid #fecaca';msg.style.color='#dc2626';
       msg.innerHTML='❌ '+(res.error||'Could not save. Check Sheets connection.');
@@ -2260,8 +2273,7 @@ function viewPatient(id) {
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
     '<button class="adm-btn-primary" onclick="openEditForm(\'' + esc(p.id) + '\')">✏️ Edit</button>' +
     '<button class="adm-btn-sm" onclick="smartPrint()">🖨️ Print</button>' +
-    '<button class="adm-btn-sm" style="background:#25d366;color:#fff;border-color:#25d366" onclick="sendAssessmentWA(\'' + esc(p.id) + '\')">📲 Send Assessment</button>' +
-    '<button class="adm-btn-sm" onclick="sendWAReminder(\'' + esc(p.id) + '\')">📅 WA Reminder</button>' +
+    '<button class="adm-btn-sm" onclick="sendWAReminder(\'' + esc(p.id) + '\')">💬 Send Assessment</button>' +
     '<button class="adm-btn-sm" onclick="renderAdmin(\'patients\')">← Back</button>' +
     '</div></div></div>' +
 
@@ -2504,84 +2516,74 @@ function exportCSV() {
 ══════════════════════════════════════════════════════ */
 function sendWAReminder(id) {
   var p = patientCache.find(function(x){return x.id===id;});
-  if(!p) return;
-  var msg = 'Hello '+p.name+', this is a friendly reminder from Dilly Physio Centre (Dr. S. Dilly Babu, MPT (Neuro) PT). Your next physiotherapy appointment is on '+fmt(p.nextAppt||'—')+'. Please call 9360635121 to confirm. Thank you!';
-  window.open('https://wa.me/91'+p.phone+'?text='+encodeURIComponent(msg),'_blank');
-}
+  if(!p){ toast('Patient not found','error'); return; }
+  var s = {};
+  try{ if(p.assessment) s = JSON.parse(p.assessment); }catch(e){}
+  var painLabels=['No Pain','Mild','Mild','Moderate','Moderate','Severe','Severe','Very Severe','Very Severe','Worst','Worst'];
+  var ps = parseInt(s.painScale)||0;
 
-/* ── Send assessment summary to patient WhatsApp ── */
-function sendAssessmentWA(patientId) {
-  // Can be called from save success (form still open) OR from viewPatient (use cache)
-  var p = patientCache.find(function(x){return x.id===patientId;});
-  var phone = '', name = '';
-  var f = document.getElementById('adm-pt-form');
-  if (f) {
-    var get = function(n){ return f.elements[n]?f.elements[n].value:''; };
-    phone = get('phone') || (p ? p.phone : '');
-    name  = get('name')  || (p ? p.name  : '');
-    var s = {};
-    try { s = JSON.parse((p&&p.assessment)||'{}'); } catch(e){}
-    var lines = [];
-    lines.push('📋 *Clinical Physiotherapy Assessment*');
-    lines.push('🏥 *Dilly Physio Centre* — Dr. S. Dilly Babu, MPT (Neuro)');
-    lines.push('📞 9360635121 | Katpadi, Vellore');
-    lines.push('─────────────────────────');
-    lines.push('👤 *Patient:* ' + name);
-    if(get('age'))    lines.push('📅 *Age:* ' + get('age') + ' yrs');
-    if(get('gender')) lines.push('⚧ *Gender:* ' + get('gender'));
-    lines.push('─────────────────────────');
-    if(get('chiefComplaints')) lines.push('🩺 *Chief Complaints:*' + '\n' + get('chiefComplaints'));
-    if(get('diagnosis'))       lines.push('🔬 *Diagnosis:* ' + get('diagnosis'));
-    if(get('painSite'))        lines.push('📍 *Pain Site:* ' + get('painSite') + (get('painSide')?' ('+get('painSide')+')':''));
-    var ps = parseInt(get('painScale'))||0;
-    if(ps) lines.push('😣 *Pain Scale:* ' + ps + '/10');
-    lines.push('─────────────────────────');
-    lines.push('💊 *Treatment Plan:* ' + get('treatmentPlan'));
-    if(get('lengthening'))     lines.push('🧘 *Lengthening:* ' + get('lengthening'));
-    if(get('strengthening'))   lines.push('💪 *Strengthening:* ' + get('strengthening'));
-    lines.push('─────────────────────────');
-    if(get('visitDate'))  lines.push('🗓️ *Visit Date:* ' + fmt(get('visitDate')));
-    if(get('nextAppt'))   lines.push('📅 *Next Appointment:* ' + fmt(get('nextAppt')));
-    if(get('feeTotal'))   lines.push('💰 *Fee:* ₹' + get('feeTotal') + (get('feeMode')?' ('+get('feeMode')+')':'') + (get('feePaid')?'  |  Paid: ₹'+get('feePaid'):''));
-    lines.push('─────────────────────────');
-    lines.push('_Please follow the treatment plan and attend all sessions for best recovery._');
-    lines.push('_For queries, call or WhatsApp: 9360635121_');
-    var msg = lines.join('\n');
-    if(!phone){ toast('No phone number found','error'); return; }
-    window.open('https://wa.me/91'+phone.replace(/\D/g,'')+'?text='+encodeURIComponent(msg),'_blank');
-  } else if (p) {
-    // Called from viewPatient — build from cache
-    var s2 = {};
-    try { s2 = JSON.parse(p.assessment||'{}'); } catch(e){}
-    var lines2 = [];
-    lines2.push('📋 *Clinical Physiotherapy Assessment*');
-    lines2.push('🏥 *Dilly Physio Centre* — Dr. S. Dilly Babu, MPT (Neuro)');
-    lines2.push('📞 9360635121 | Katpadi, Vellore');
-    lines2.push('─────────────────────────');
-    lines2.push('👤 *Patient:* ' + p.name);
-    if(p.age)    lines2.push('📅 *Age:* ' + p.age + ' yrs');
-    if(p.gender) lines2.push('⚧ *Gender:* ' + p.gender);
-    lines2.push('─────────────────────────');
-    if(s2.chiefComplaints) lines2.push('🩺 *Chief Complaints:*' + '\n' + s2.chiefComplaints);
-    if(p.diagnosis)        lines2.push('🔬 *Diagnosis:* ' + p.diagnosis);
-    if(s2.painSite)        lines2.push('📍 *Pain Site:* ' + s2.painSite + (s2.painSide?' ('+s2.painSide+')':''));
-    var ps2 = parseInt(s2.painScale)||0;
-    if(ps2) lines2.push('😣 *Pain Scale:* ' + ps2 + '/10');
-    lines2.push('─────────────────────────');
-    lines2.push('💊 *Treatment Plan:* ' + p.treatmentPlan);
-    if(s2.lengthening)     lines2.push('🧘 *Lengthening:* ' + s2.lengthening);
-    if(s2.strengthening)   lines2.push('💪 *Strengthening:* ' + s2.strengthening);
-    lines2.push('─────────────────────────');
-    if(p.visitDate)  lines2.push('🗓️ *Visit Date:* ' + fmt(p.visitDate));
-    if(p.nextAppt)   lines2.push('📅 *Next Appointment:* ' + fmt(p.nextAppt));
-    if(s2.feeTotal)  lines2.push('💰 *Fee:* ₹' + s2.feeTotal + (s2.feeMode?' ('+s2.feeMode+')':'') + (s2.feePaid?'  |  Paid: ₹'+s2.feePaid:''));
-    lines2.push('─────────────────────────');
-    lines2.push('_Please follow the treatment plan and attend all sessions for best recovery._');
-    lines2.push('_For queries, call or WhatsApp: 9360635121_');
-    var msg2 = lines2.join('\n');
-    if(!p.phone){ toast('No phone number found','error'); return; }
-    window.open('https://wa.me/91'+p.phone.replace(/\D/g,'')+'?text='+encodeURIComponent(msg2),'_blank');
+  // Ask what to send
+  var choice = confirm(
+    'Send to ' + p.name + ' (' + (p.phone||'no phone') + ')\n\n' +
+    'OK = Full Assessment Summary\n' +
+    'Cancel = Appointment Reminder only'
+  );
+
+  var msg;
+  if(choice){
+    // Full assessment summary
+    var L = '\n';
+    msg = '🏥 *DILLY PHYSIO CENTRE*'+L;
+    msg += 'Dr. S. Dilly Babu, MPT (Neuro)'+L;
+    msg += 'Katpadi, Vellore | 9360635121'+L;
+    msg += '---------------------------------'+L+L;
+    msg += '📋 *CLINICAL ASSESSMENT SUMMARY*'+L+L;
+    msg += '*Patient:* ' + (p.name||'-') + L;
+    msg += '*Age/Gender:* ' + (p.age||'-') + ' yrs / ' + (p.gender||'-') + L;
+    msg += '*Condition:* ' + (p.condition||'-') + L;
+    if(p.diagnosis) msg += '*Diagnosis:* ' + p.diagnosis + L;
+    if(p.painArea) msg += '*Pain Area:* ' + p.painArea + L;
+    msg += L;
+    if(s.chiefComplaints) msg += '*Chief Complaints:*'+L + s.chiefComplaints + L+L;
+    if(s.painSite || s.painDuration) {
+      msg += '*Pain History:*'+L;
+      if(s.painSite) msg += '- Site: ' + s.painSite + (s.painSide ? ' (' + s.painSide + ')' : '') + L;
+      if(s.painDuration) msg += '- Duration: ' + s.painDuration + L;
+      if(s.painNature) msg += '- Nature: ' + s.painNature + L;
+      msg += L;
+    }
+    if(ps>0) msg += '*Pain Scale (VAS):* ' + ps + '/10 - ' + (painLabels[ps]||'') + L+L;
+    if(s.lengthening || s.strengthening || s.modalities) {
+      msg += '*Treatment Plan:*'+L;
+      if(s.lengthening) msg += '- Lengthening: ' + s.lengthening + L;
+      if(s.strengthening) msg += '- Strengthening: ' + s.strengthening + L;
+      if(s.modalities) msg += '- Modalities: ' + s.modalities + L;
+      msg += L;
+    }
+    if(p.nextAppt) msg += '*Next Appointment:* ' + fmt(p.nextAppt) + L;
+    if(s.feeTotal) msg += '*Total Fee:* Rs.' + s.feeTotal + (s.feeMode ? ' (' + s.feeMode + ')' : '') + ' - ' + (s.feePaid||'') + L;
+    msg += L+'---------------------------------'+L;
+    msg += 'For your complete record, contact:'+L;
+    msg += '9360635121 | dillyphysiocentre.in'+L;
+    msg += '_Dilly Physio Centre, Katpadi, Vellore_';
+  } else {
+    var L = '\n';
+    msg = '🏥 *Dilly Physio Centre*'+L+L;
+    msg += 'Hello ' + (p.name||'Patient') + ','+L+L;
+    msg += 'This is a reminder for your physiotherapy appointment.'+L+L;
+    msg += '*Date:* ' + (p.nextAppt ? fmt(p.nextAppt) : 'Please confirm with us') + L+L;
+    msg += 'Please call *9360635121* to confirm or reschedule.'+L+L;
+    msg += '_Dr. S. Dilly Babu, MPT (Neuro)_'+L;
+    msg += '_Dilly Physio Centre, Katpadi, Vellore_';
   }
+
+  if(!p.phone || p.phone.length < 10){
+    toast('No valid phone number for this patient','error');
+    return;
+  }
+  var phone = p.phone.replace(/\D/g,'');
+  if(phone.length === 10) phone = '91' + phone;
+  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
 }
 
 /* ══════════════════════════════════════════════════════
