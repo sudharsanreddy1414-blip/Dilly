@@ -410,7 +410,8 @@ img{max-width:100%;display:block}
 .about-grid{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
 .doctor-card{background:linear-gradient(135deg,#051232,#083045);border-radius:24px;overflow:hidden;box-shadow:0 20px 60px rgba(5,18,50,.25)}
 .doctor-card-top{background:linear-gradient(135deg,#0d9488,#0369a1);padding:40px 32px;text-align:center}
-.doctor-avatar{width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:50px;margin:0 auto 20px;border:3px solid rgba(255,255,255,.3)}
+.doctor-avatar{width:140px;height:140px;margin:0 auto 20px;border-radius:50%;overflow:hidden;border:4px solid rgba(255,255,255,.3);box-shadow:0 8px 25px rgba(0,0,0,.25);background:#fff;}
+.doctor-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
 .doctor-name{font-family:'Playfair Display',Georgia,serif;color:#fff;font-size:22px;font-weight:800}
 .doctor-title{color:rgba(255,255,255,.85);font-size:14px;margin-top:4px}
 .doctor-stars{display:flex;justify-content:center;gap:4px;margin-top:12px}
@@ -594,6 +595,7 @@ footer{background:var(--navy-dark);border-top:1px solid rgba(45,212,191,.1);padd
 .adm-table tr:last-child td{border-bottom:none}
 .adm-cond-badge{background:#f0fdf9;border:1px solid #6ee7b7;color:#065f46;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;display:inline-block}
 .adm-appt-badge{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;display:inline-block}
+.adm-appt-badge.past{background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
 .adm-btn-primary{background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;border:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px;font-family:inherit}
 .adm-btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(13,148,136,.35)}
 .adm-btn-secondary{background:#fff;color:#475569;border:1px solid #e2e8f0;padding:10px 20px;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;transition:all .2s;font-family:inherit}
@@ -968,7 +970,9 @@ footer{background:var(--navy-dark);border-top:1px solid rgba(45,212,191,.1);padd
       <div class="fade-up" style="transition-delay:.1s">
         <div class="doctor-card">
           <div class="doctor-card-top">
-            <div class="doctor-avatar">👨‍⚕️</div>
+            <div class="doctor-avatar">
+              <img src="Dilly.PNG" alt="Dr. Dilly Babu" />
+            </div>
             <div class="doctor-name">Dr. S. Dilly Babu, MPT (Neuro)</div>
             <div class="doctor-title">PT · Consultant Neuro Physiotherapist</div>
             <div class="doctor-stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
@@ -1374,13 +1378,23 @@ function apiPost(body, callback) {
   sendChunk(0);
 }
 
-/* Load all patients from Sheets into cache */
-function loadPatients(callback) {
+/* Load all patients from Sheets into cache — with 60-second TTL */
+var _patientsCacheTime = 0;
+var _patientsCacheTTL  = 60000; // 60 seconds
+
+function loadPatients(callback, forceRefresh) {
+  var now = Date.now();
+  // Return from cache if fresh and not forced
+  if (!forceRefresh && patientCache.length > 0 && (now - _patientsCacheTime) < _patientsCacheTTL) {
+    if (callback) callback(patientCache);
+    return;
+  }
   showSpinner();
   apiGet({ action: 'getAll' }, function(res) {
     hideSpinner();
     if (res.success) {
       patientCache = res.patients || [];
+      _patientsCacheTime = Date.now();
       if (callback) callback(patientCache);
     } else if (res.error === 'setup_needed') {
       showSetupBanner();
@@ -1429,20 +1443,14 @@ function showSetupBanner() {
 function saveWebAppUrl() {
   var val = document.getElementById('setup-url-input').value.trim();
   if (!val || !val.startsWith('https://script.google.com')) {
-    toast('❌ Please enter a valid Google Apps Script URL','error'); return;
+    toast('Please enter a valid Google Apps Script URL','error'); return;
   }
   SHEETS_URL = val;
   localStorage.setItem('dpc_sheets_url', val);
-  var msg = document.getElementById('setup-test-msg');
-  if(msg){ msg.style.display='block'; msg.style.background='#f0fdf9'; msg.style.border='1px solid #6ee7b7'; msg.style.color='#065f46'; msg.textContent='⏳ Testing connection…'; }
   toast('🔗 Connecting to Google Sheets…');
   loadPatients(function(pts) {
-    if(msg){ msg.textContent='✅ Connected! ' + pts.length + ' patient(s) found.'; }
-    toast('✅ Connected! ' + pts.length + ' patient(s) loaded.');
-    // Update indicator
-    var ind = document.getElementById('sheets-indicator');
-    if(ind) ind.textContent = '🟢 Sheets Connected';
-    setTimeout(function(){ renderAdmin('dashboard'); }, 1200);
+    toast('✅ Connected! ' + pts.length + ' patient(s) loaded.', 'success');
+    renderAdmin('dashboard');
   });
 }
 
@@ -1602,7 +1610,7 @@ function doForgotPassword() {
 
 function renderAdmin(view) {
   var layer = document.getElementById('admin-layer');
-  var titles = {dashboard:'Dashboard',patients:'Patients',add:'Add Patient',appointments:'Appointments',setup:'Sheets Setup'};
+  var titles = {dashboard:'Dashboard',patients:'Patients',add:'Add Patient',appointments:'Appointments'};
   layer.innerHTML =
     '<div class="adm-shell">' + '<div id="adm-sidebar-overlay" class="adm-sidebar-overlay" onclick="document.getElementById(\'adm-sidebar\').classList.remove(\'open\');this.classList.remove(\'visible\');"></div>' +
     '<aside class="adm-sidebar" id="adm-sidebar">' +
@@ -1615,7 +1623,7 @@ function renderAdmin(view) {
     navBtn('appointments', view, '📅', 'Appointments') +
     '</nav>' +
     '<div class="adm-sidebar-footer">' +
-    '<button class="adm-nav-link ' + (view === "setup" ? "active" : "") + '" onclick="renderAdmin(\'setup\')"><span>⚙</span> Sheets Setup</button>' +
+    '<button class="adm-nav-link" onclick="showSetupGuide()" style="color:#94a3b8"><span>⚙️</span> Sheets Setup</button>' +
     '<button class="adm-nav-link" onclick="hideAdmin()" style="color:#94a3b8"><span>🌐</span> View Website</button>' +
     '<button class="adm-nav-link" onclick="doLogout()" style="color:#f87171;margin-top:4px"><span>🚪</span> Logout</button>' +
     '</div></aside>' +
@@ -1625,7 +1633,7 @@ function renderAdmin(view) {
     '<div class="adm-topbar-title" id="adm-page-title">'+(titles[view]||'Dashboard')+'</div>' +
     '<div class="adm-topbar-right">' +
     '<span class="adm-sheets-indicator" id="sheets-indicator" onclick="showSetupGuide()" title="Click to configure">' +
-    (isConnected() ? '🟢 Sheets Connected' : '🔴 Not Connected') +
+    (isConnected() ? '🟢 Sheets Connected' : '🔴 Sheets Not Connected') +
     '</span>' +
     '<span class="adm-badge-staff">👤 Dr. Dilly Babu</span>' +
     '</div></header>' +
@@ -1636,7 +1644,6 @@ function renderAdmin(view) {
   else if (view==='patients')     renderPatientsList();
   else if (view==='add')          renderPatientForm();
   else if (view==='appointments') renderAppointments();
-  else if (view==='setup')        showSetupGuide();
 }
 
 function navBtn(view, current, icon, label) {
@@ -1644,57 +1651,6 @@ function navBtn(view, current, icon, label) {
 }
 function isConnected() {
   return SHEETS_URL && SHEETS_URL !== 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL';
-}
-
-/* ══ Sheets Setup UI ══ */
-function showSetupGuide() {
-  var c = document.getElementById('adm-content');
-  if (!c) return;
-  var current = isConnected() ? SHEETS_URL : '';
-  c.innerHTML =
-    '<div style="max-width:620px;margin:0 auto;padding:8px">' +
-
-    // Status card
-    '<div style="background:'+(isConnected()?'#f0fdf9':'#fef2f2')+';border:1.5px solid '+(isConnected()?'#6ee7b7':'#fecaca')+';border-radius:14px;padding:18px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px">' +
-    '<span style="font-size:28px">'+(isConnected()?'🟢':'🔴')+'</span>' +
-    '<div><div style="font-weight:800;font-size:15px;color:#0f172a">'+(isConnected()?'Google Sheets Connected':'Not Connected')+'</div>' +
-    '<div style="font-size:12px;color:#64748b;margin-top:2px">'+(isConnected()?'Patients are syncing to your spreadsheet.':'Connect your Apps Script to enable patient data sync.')+'</div></div>' +
-    '</div>' +
-
-    // URL input
-    '<div class="adm-card" style="margin-bottom:16px">' +
-    '<div class="adm-card-title" style="margin-bottom:14px">🔗 Paste Your Apps Script URL</div>' +
-    '<input id="setup-url-input" class="adm-input" type="url" ' +
-    'placeholder="https://script.google.com/macros/s/…/exec" ' +
-    'value="'+esc(current)+'" style="font-size:13px;margin-bottom:12px"/>' +
-    '<button class="adm-btn-primary" onclick="saveWebAppUrl()" style="width:100%;justify-content:center">✅ Connect &amp; Test</button>' +
-    (isConnected() ? '<button class="adm-btn-secondary" onclick="disconnectSheets()" style="width:100%;justify-content:center;margin-top:8px">🔌 Disconnect</button>' : '') +
-    '<div id="setup-test-msg" style="display:none;margin-top:12px;padding:10px;border-radius:8px;font-size:13px"></div>' +
-    '</div>' +
-
-    // Step by step guide
-    '<div class="adm-card">' +
-    '<div class="adm-card-title" style="margin-bottom:14px">📋 Setup Guide</div>' +
-    '<ol style="padding-left:18px;color:#475569;font-size:13px;line-height:2">' +
-    '<li>Open your Google Sheet → <b>Extensions → Apps Script</b></li>' +
-    '<li>Delete all code → Paste the <b>Code.gs</b> content</li>' +
-    '<li>Click <b>Deploy → New deployment</b></li>' +
-    '<li>Type: <b>Web app</b> → Execute as: <b>Me</b> → Access: <b>Anyone</b></li>' +
-    '<li>Click <b>Deploy</b> → Copy the Web App URL</li>' +
-    '<li>Paste URL above → Click <b>Connect &amp; Test</b></li>' +
-    '</ol>' +
-    '<div style="margin-top:12px;padding:10px 14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b">'+
-    '⚠️ If you redeploy, always create a <b>New Version</b> — not an existing one.</div>' +
-    '</div>' +
-    '</div>';
-}
-
-function disconnectSheets() {
-  if(!confirm('Disconnect Google Sheets? Patient data will not sync until reconnected.')) return;
-  SHEETS_URL = 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL';
-  localStorage.removeItem('dpc_sheets_url');
-  toast('🔌 Disconnected. Reconnect via Sheets Setup.','error');
-  renderAdmin('setup');
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1760,7 +1716,7 @@ function renderDashboard() {
       '<div class="adm-quick-actions">' +
       '<button class="adm-quick-btn" onclick="openAddForm()">➕ New Patient</button>' +
       '<button class="adm-quick-btn secondary" onclick="exportCSV()">📥 Export CSV</button>' +
-      '<button class="adm-quick-btn secondary" onclick="loadPatients(function(){ toast(\'✅ Data refreshed from Google Sheets\'); renderAdmin(\'dashboard\'); })">🔄 Refresh Data</button>' +
+      '<button class="adm-quick-btn secondary" onclick="loadPatients(function(){ toast(\'✅ Data refreshed from Google Sheets\'); renderAdmin(\'dashboard\'); }, true)">🔄 Refresh Data</button>' +
       '</div>';
   });
 }
@@ -1798,7 +1754,7 @@ function renderPatientsList() {
 function refreshPatientsList() {
   var t = document.getElementById('adm-patients-table');
   if(t) t.innerHTML = '<div class="adm-spinner-wrap"><div class="adm-spinner"></div></div>';
-  loadPatients(function(){ applyFilters(); toast('✅ Patient list refreshed'); });
+  loadPatients(function(){ applyFilters(); toast('✅ Patient list refreshed'); }, true);
 }
 
 function applyFilters() {
@@ -1859,41 +1815,7 @@ function openEditForm(id) {
     renderAdmin('add');
   }
 }
-  
-function fld(label, name, type, placeholder, value = '', required = false, extra = '') {
-  return `
-    <div class="adm-field-group">
-      <label class="adm-label">${label}</label>
-      <input
-        class="adm-input"
-        type="${type}"
-        name="${name}"
-        placeholder="${placeholder}"
-        value="${value || ''}"
-        ${required ? 'required' : ''}
-        ${extra}
-      >
-    </div>
-  `;
-}
 
-function selFld(label, name, options, value = '', required = false) {
-  return `
-    <div class="adm-field-group">
-      <label class="adm-label">${label}</label>
-      <select
-        class="adm-input"
-        name="${name}"
-        ${required ? 'required' : ''}
-      >
-        ${options.map(opt =>
-          `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`
-        ).join('')}
-      </select>
-    </div>
-  `;
-}
-  
 function renderPatientForm() {
   var p = editingId ? (patientCache.find(function(x){return x.id===editingId;})||{}) : {};
   var condOpts = ['Neck Pain','Shoulder Pain','Back Pain','Knee Pain','Heel Pain','Muscle Strain','Ligament Sprain','ACL Rehab','Stroke Rehab','Parkinson Disease','Mobility Training','Head Injury','CP Child','OA Knee','Rotator Cuff Injury','Disc Bulge','Post-Operative','Other'];
@@ -2014,7 +1936,7 @@ function renderPatientForm() {
   '<div class="adm-card" style="margin-bottom:14px">' +
   '<div class="assess-section-title">🩻 8. Diagnosis</div>' +
   '<div class="assess-two">' +
-  selFld('Condition','condition',condOpts,p.condition,true) +
+  condSelFld(condOpts, p.condition) +
   fld('Specific Diagnosis','diagnosis','text','Clinical diagnosis',p.diagnosis) +
   '</div>' +
   '<div class="adm-field-group" style="margin-top:10px"><label class="adm-label">Pain Area / Region</label>' +
@@ -2437,6 +2359,295 @@ function saveChart(){
     initHero();
   }
 })();
+
+/* ══════════════════════════════════════════════════════
+   HASH ROUTING
+══════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════
+   MISSING FUNCTIONS — ADDED FIX
+══════════════════════════════════════════════════════ */
+
+/* ── viewPatient: renders a full patient detail card ── */
+function viewPatient(id) {
+  var p = patientCache.find(function(x){ return x.id === id; });
+  if (!p) {
+    // Not in cache — try reloading once
+    if (isConnected()) {
+      loadPatients(function(){ viewPatient(id); });
+    } else {
+      toast('Patient not found', 'error');
+    }
+    return;
+  }
+
+  var c = document.getElementById('adm-content');
+  if (!c) return;
+  if (document.getElementById('adm-page-title')) {
+    document.getElementById('adm-page-title').textContent = 'Patient Details';
+  }
+
+  // Parse assessment JSON safely
+  var asmObj = {};
+  try { asmObj = JSON.parse(p.assessment || '{}'); } catch(e) {}
+
+  // Load body chart from localStorage if available
+  var chartHtml = '';
+  try {
+    var saved = localStorage.getItem('dpc_chart_' + p.id);
+    if (saved) {
+      var ch = JSON.parse(saved);
+      if (ch.front || ch.back) {
+        chartHtml = '<div class="adm-card" style="margin-top:16px">' +
+          '<div class="adm-card-header"><div class="adm-card-title">🗺️ Body Chart</div></div>' +
+          '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px">' +
+          (ch.front ? '<div style="text-align:center"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Front</div><img src="'+ch.front+'" style="width:100px;border-radius:8px;border:1px solid #e2e8f0"/></div>' : '') +
+          (ch.back  ? '<div style="text-align:center"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Back</div><img src="'+ch.back+'" style="width:100px;border-radius:8px;border:1px solid #e2e8f0"/></div>' : '') +
+          '</div></div>';
+      }
+    }
+  } catch(e) {}
+
+  var feeInfo = (asmObj.feeTotal || p.feeTotal)
+    ? '<tr><td style="color:#64748b">Fee</td><td>₹' + esc(asmObj.feeTotal || p.feeTotal || '') +
+      (asmObj.feePaid ? ' &nbsp;<span style="color:#16a34a;font-size:11px">(Paid: ₹' + esc(asmObj.feePaid) + ')</span>' : '') + '</td></tr>'
+    : '';
+
+  c.innerHTML =
+    '<div style="max-width:780px">' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">' +
+    '<button class="adm-btn-sm" onclick="renderAdmin(\'patients\')">← Back</button>' +
+    '<button class="adm-btn-primary" style="margin-left:auto" onclick="openEditForm(\''+esc(p.id)+'\')">✏️ Edit</button>' +
+    '<button class="adm-icon-btn" onclick="sendWAReminder(\''+esc(p.id)+'\')" title="Send WhatsApp reminder">💬</button>' +
+    '<button class="adm-icon-btn danger" onclick="deletePatient(\''+esc(p.id)+'\')" title="Delete patient">🗑️</button>' +
+    '</div>' +
+
+    '<div class="adm-card">' +
+    '<div style="display:flex;align-items:center;gap:16px;padding:20px;border-bottom:1px solid #f1f5f9">' +
+    '<div class="adm-pt-avatar" style="width:56px;height:56px;font-size:22px;flex-shrink:0">'+(p.name||'?')[0].toUpperCase()+'</div>' +
+    '<div><div style="font-size:20px;font-weight:700;color:#0f172a">'+esc(p.name)+'</div>' +
+    '<div style="color:#64748b;font-size:13px">'+esc(p.age||'')+(p.age?' yrs':'')+(p.gender?' &nbsp;·&nbsp; '+esc(p.gender):'')+'</div></div>' +
+    (p.nextAppt && p.nextAppt >= today() ? '<div style="margin-left:auto"><span class="adm-appt-badge">📅 '+fmt(p.nextAppt)+'</span></div>' : '') +
+    '</div>' +
+
+    '<div style="padding:20px">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:14px">' +
+    '<tr><td style="color:#64748b;padding:6px 0;width:140px">📱 Phone</td>' +
+    '<td><a href="tel:+91'+esc(p.phone)+'" style="color:#0d9488;font-weight:600">'+esc(p.phone||'—')+'</a></td></tr>' +
+    '<tr><td style="color:#64748b;padding:6px 0">🏠 Address</td><td>'+esc(p.address||'—')+'</td></tr>' +
+    '<tr><td style="color:#64748b;padding:6px 0">🩺 Condition</td><td><span class="adm-cond-badge">'+esc(p.condition||'—')+'</span></td></tr>' +
+    '<tr><td style="color:#64748b;padding:6px 0">📍 Pain Area</td><td>'+esc(p.painArea||'—')+'</td></tr>' +
+    '<tr><td style="color:#64748b;padding:6px 0">🔬 Diagnosis</td><td>'+esc(p.diagnosis||asmObj.diagnosis||'—')+'</td></tr>' +
+    '<tr><td style="color:#64748b;padding:6px 0">📅 Visit Date</td><td>'+fmt(p.visitDate)+'</td></tr>' +
+    '<tr><td style="color:#64748b;padding:6px 0">📅 Next Appt</td><td>'+(p.nextAppt?fmt(p.nextAppt):'—')+'</td></tr>' +
+    feeInfo +
+    '</table></div></div>' +
+
+    (p.treatmentPlan||asmObj.treatmentPlan ? '<div class="adm-card" style="margin-top:16px"><div class="adm-card-header"><div class="adm-card-title">📋 Treatment Plan</div></div><div style="padding:16px;color:#334155;white-space:pre-wrap;font-size:14px">'+esc(p.treatmentPlan||asmObj.treatmentPlan)+'</div></div>' : '') +
+
+    (p.progressNotes||asmObj.progressNotes ? '<div class="adm-card" style="margin-top:16px"><div class="adm-card-header"><div class="adm-card-title">📝 Progress Notes</div></div><div style="padding:16px;color:#334155;white-space:pre-wrap;font-size:14px">'+esc(p.progressNotes||asmObj.progressNotes)+'</div></div>' : '') +
+
+    chartHtml +
+    '</div>';
+}
+
+/* ── deletePatient: confirm then remove via API ── */
+function deletePatient(id) {
+  var p = patientCache.find(function(x){ return x.id === id; });
+  var name = p ? p.name : 'this patient';
+  if (!confirm('Delete ' + name + '?\n\nThis cannot be undone.')) return;
+
+  if (!isConnected()) {
+    // No Sheets — remove from cache only
+    patientCache = patientCache.filter(function(x){ return x.id !== id; });
+    toast('🗑️ Patient removed (local cache only)');
+    renderAdmin('patients');
+    return;
+  }
+
+  apiPost({ action: 'delete', patientId: id }, function(res) {
+    if (res.success) {
+      patientCache = patientCache.filter(function(x){ return x.id !== id; });
+      toast('🗑️ Patient deleted successfully');
+      renderAdmin('patients');
+    } else {
+      toast('❌ Could not delete: ' + (res.error || 'Unknown error'), 'error');
+    }
+  });
+}
+
+/* ── sendWAReminder: build WhatsApp link and open ── */
+function sendWAReminder(id) {
+  var p = patientCache.find(function(x){ return x.id === id; });
+  if (!p) { toast('Patient not found', 'error'); return; }
+
+  var phone = (p.phone || '').replace(/\D/g, '');
+  if (!phone) { toast('No phone number for this patient', 'error'); return; }
+  // Ensure Indian number format
+  if (phone.length === 10) phone = '91' + phone;
+
+  var name = p.name || 'Patient';
+  var appt = p.nextAppt ? fmt(p.nextAppt) : '';
+  var msg = 'Dear ' + name + ',\n\n' +
+    'This is a reminder from *Dilly Physio Centre*, Katpadi, Vellore.\n' +
+    (appt ? 'Your next appointment is on *' + appt + '*.\n\n' : '\n') +
+    'Please confirm your appointment or call us at *9360635121* if you need to reschedule.\n\n' +
+    'Thank you,\nDr. S. Dilly Babu, MPT (Neuro)';
+
+  var url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
+  window.open(url, '_blank');
+  toast('📤 Opening WhatsApp for ' + name);
+}
+
+/* ── renderAppointments: appointments view ── */
+function renderAppointments() {
+  var c = document.getElementById('adm-content');
+  if (!c) return;
+  if (document.getElementById('adm-page-title')) {
+    document.getElementById('adm-page-title').textContent = 'Appointments';
+  }
+
+  c.innerHTML = '<div id="appt-wrap"><div class="adm-spinner-wrap"><div class="adm-spinner"></div><div style="color:#64748b;margin-top:12px;font-size:14px">Loading appointments…</div></div></div>';
+
+  // Use cached data if available, else load
+  function renderApptData(pts) {
+    var t = today();
+    var all = pts.filter(function(p){ return p.nextAppt; })
+      .sort(function(a,b){ return a.nextAppt > b.nextAppt ? 1 : -1; });
+
+    var past     = all.filter(function(p){ return p.nextAppt < t; });
+    var upcoming = all.filter(function(p){ return p.nextAppt >= t; });
+
+    function apptTable(list, emptyMsg) {
+      if (!list.length) return '<div class="adm-empty">' + emptyMsg + '</div>';
+      return '<div class="adm-table-wrap"><table class="adm-table">' +
+        '<thead><tr><th>#</th><th>Patient</th><th>Phone</th><th>Condition</th><th>Appointment</th><th>Actions</th></tr></thead><tbody>' +
+        list.map(function(p, i) {
+          var isPast = p.nextAppt < t;
+          return '<tr style="' + (isPast ? 'opacity:.65' : '') + '">' +
+            '<td style="color:#94a3b8;font-size:12px">' + (i+1) + '</td>' +
+            '<td><div style="font-weight:600;cursor:pointer;color:#0d9488" onclick="viewPatient(\'' + esc(p.id) + '\')">' + esc(p.name) + '</div>' +
+            '<div style="font-size:11px;color:#94a3b8">' + esc(p.age||'') + (p.age?' yrs':'') + (p.gender?' · '+esc(p.gender):'') + '</div></td>' +
+            '<td><a href="tel:+91' + esc(p.phone) + '" style="color:#0d9488">' + esc(p.phone||'—') + '</a></td>' +
+            '<td><span class="adm-cond-badge">' + esc(p.condition||'—') + '</span></td>' +
+            '<td><span class="adm-appt-badge' + (isPast?' past':'') + '">' + fmt(p.nextAppt) + '</span></td>' +
+            '<td><div style="display:flex;gap:4px">' +
+            '<button class="adm-icon-btn" onclick="viewPatient(\'' + esc(p.id) + '\')" title="View">👁️</button>' +
+            '<button class="adm-icon-btn" onclick="sendWAReminder(\'' + esc(p.id) + '\')" title="WhatsApp">💬</button>' +
+            '<button class="adm-icon-btn" onclick="openEditForm(\'' + esc(p.id) + '\')" title="Edit">✏️</button>' +
+            '</div></td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+
+    var wrap = document.getElementById('appt-wrap') || c;
+    wrap.innerHTML =
+      '<div class="adm-card">' +
+      '<div class="adm-card-header">' +
+      '<div class="adm-card-title">📅 Upcoming Appointments (' + upcoming.length + ')</div>' +
+      '<button class="adm-btn-sm" onclick="refreshAppointments()">🔄 Refresh</button>' +
+      '</div>' +
+      apptTable(upcoming, 'No upcoming appointments scheduled.') +
+      '</div>' +
+      (past.length ? '<div class="adm-card" style="margin-top:20px"><div class="adm-card-header"><div class="adm-card-title" style="color:#94a3b8">🕐 Past Appointments (' + past.length + ')</div></div>' + apptTable(past.slice().reverse(), 'No past appointments.') + '</div>' : '');
+  }
+
+  if (patientCache.length > 0) {
+    renderApptData(patientCache);
+  } else {
+    loadPatients(function(pts){ renderApptData(pts); });
+  }
+}
+
+function refreshAppointments() {
+  loadPatients(function(){ renderAppointments(); toast('✅ Appointments refreshed'); }, true);
+}
+
+/* ── exportCSV: download patient list as CSV ── */
+function exportCSV() {
+  if (patientCache.length === 0) {
+    toast('No patients to export', 'error'); return;
+  }
+  var headers = ['ID','Name','Age','Gender','Phone','Address','Condition','Pain Area','Diagnosis','Visit Date','Next Appointment','Treatment Plan','Progress Notes'];
+  var rows = [headers.join(',')];
+  patientCache.forEach(function(p) {
+    function q(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; }
+    rows.push([
+      q(p.id), q(p.name), q(p.age), q(p.gender), q(p.phone),
+      q(p.address), q(p.condition), q(p.painArea), q(p.diagnosis),
+      q(p.visitDate), q(p.nextAppt), q(p.treatmentPlan), q(p.progressNotes)
+    ].join(','));
+  });
+  var csv = rows.join('\r\n');
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'dilly-physio-patients-' + today() + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('📥 CSV downloaded (' + patientCache.length + ' patients)');
+}
+
+/* ── closeModal: close the global modal overlay ── */
+function closeModal(e) {
+  var modal = document.getElementById('adm-modal');
+  if (!modal) return;
+  // Close only if clicking backdrop (not content)
+  if (e && e.target !== modal) return;
+  modal.style.display = 'none';
+  modal.innerHTML = '';
+}
+
+/* ── showSetupGuide: render Google Sheets setup instructions ── */
+function showSetupGuide() {
+  var c = document.getElementById('adm-content');
+  if (!c) return;
+  if (document.getElementById('adm-page-title')) {
+    document.getElementById('adm-page-title').textContent = 'Sheets Setup';
+  }
+  c.innerHTML =
+    '<div class="adm-card" style="max-width:680px">' +
+    '<div class="adm-card-header"><div class="adm-card-title">⚙️ Google Sheets Setup Guide</div></div>' +
+    '<div style="padding:20px;line-height:1.8;color:#334155;font-size:14px">' +
+    '<ol style="padding-left:20px">' +
+    '<li style="margin-bottom:16px"><strong>Create a Google Sheet</strong> — Open Google Sheets, create a new spreadsheet and name it <em>Dilly Physio Patients</em>.</li>' +
+    '<li style="margin-bottom:16px"><strong>Open Apps Script</strong> — In the sheet, go to <strong>Extensions → Apps Script</strong>.</li>' +
+    '<li style="margin-bottom:16px"><strong>Paste the backend code</strong> — Replace the default code with the doGet/doPost handler that reads and writes patient rows.</li>' +
+    '<li style="margin-bottom:16px"><strong>Deploy as Web App</strong> — Click <strong>Deploy → New deployment</strong>, choose <em>Web App</em>, set <em>Execute as: Me</em> and <em>Who has access: Anyone</em>. Click Deploy and copy the URL.</li>' +
+    '<li style="margin-bottom:16px"><strong>Paste URL below</strong> — Enter the copied URL and click Connect.</li>' +
+    '</ol>' +
+    '<div style="margin-top:20px">' +
+    '<label style="font-weight:600;display:block;margin-bottom:8px">Web App URL</label>' +
+    '<input id="setup-url-input" class="adm-input" style="max-width:500px;display:block" placeholder="https://script.google.com/macros/s/…/exec" value="'+(isConnected()?esc(SHEETS_URL):'')+'" />' +
+    '<button class="adm-btn-primary" style="margin-top:12px" onclick="saveWebAppUrl()">✅ Connect &amp; Test</button>' +
+    (isConnected() ? '<p style="margin-top:16px;color:#16a34a;font-weight:600">🟢 Currently connected to Google Sheets</p>' : '') +
+    '</div></div></div>';
+}
+
+/* ── clearChart: clear the body pain chart canvas ── */
+function clearChart() {
+  var front = document.getElementById('body-front');
+  var back  = document.getElementById('body-back');
+  if (front) {
+    var ctx = front.getContext('2d');
+    ctx.clearRect(0, 0, front.width, front.height);
+    // Redraw anatomy
+    try { drawBody(ctx, 'front', front.width, front.height); } catch(e) {}
+  }
+  if (back) {
+    var ctx2 = back.getContext('2d');
+    ctx2.clearRect(0, 0, back.width, back.height);
+    try { drawBody(ctx2, 'back', back.width, back.height); } catch(e) {}
+  }
+  window._pendingChartData = null;
+  toast('🗑️ Body chart cleared');
+}
+
+/* ── printFromForm: print the current patient form ── */
+function printFromForm() {
+  // Save chart data before printing
+  try { saveChart(); } catch(e) {}
+  window.print();
+}
 
 /* ══════════════════════════════════════════════════════
    HASH ROUTING
