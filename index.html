@@ -1429,20 +1429,14 @@ function showSetupBanner() {
 function saveWebAppUrl() {
   var val = document.getElementById('setup-url-input').value.trim();
   if (!val || !val.startsWith('https://script.google.com')) {
-    toast('❌ Please enter a valid Google Apps Script URL','error'); return;
+    toast('Please enter a valid Google Apps Script URL','error'); return;
   }
   SHEETS_URL = val;
   localStorage.setItem('dpc_sheets_url', val);
-  var msg = document.getElementById('setup-test-msg');
-  if(msg){ msg.style.display='block'; msg.style.background='#f0fdf9'; msg.style.border='1px solid #6ee7b7'; msg.style.color='#065f46'; msg.textContent='⏳ Testing connection…'; }
   toast('🔗 Connecting to Google Sheets…');
   loadPatients(function(pts) {
-    if(msg){ msg.textContent='✅ Connected! ' + pts.length + ' patient(s) found.'; }
-    toast('✅ Connected! ' + pts.length + ' patient(s) loaded.');
-    // Update indicator
-    var ind = document.getElementById('sheets-indicator');
-    if(ind) ind.textContent = '🟢 Sheets Connected';
-    setTimeout(function(){ renderAdmin('dashboard'); }, 1200);
+    toast('✅ Connected! ' + pts.length + ' patient(s) loaded.', 'success');
+    renderAdmin('dashboard');
   });
 }
 
@@ -1602,7 +1596,7 @@ function doForgotPassword() {
 
 function renderAdmin(view) {
   var layer = document.getElementById('admin-layer');
-  var titles = {dashboard:'Dashboard',patients:'Patients',add:'Add Patient',appointments:'Appointments',setup:'Sheets Setup'};
+  var titles = {dashboard:'Dashboard',patients:'Patients',add:'Add Patient',appointments:'Appointments'};
   layer.innerHTML =
     '<div class="adm-shell">' + '<div id="adm-sidebar-overlay" class="adm-sidebar-overlay" onclick="document.getElementById(\'adm-sidebar\').classList.remove(\'open\');this.classList.remove(\'visible\');"></div>' +
     '<aside class="adm-sidebar" id="adm-sidebar">' +
@@ -1615,7 +1609,7 @@ function renderAdmin(view) {
     navBtn('appointments', view, '📅', 'Appointments') +
     '</nav>' +
     '<div class="adm-sidebar-footer">' +
-    '<button class="adm-nav-link '+(view===\'setup\'?\'active\':\'')+\'" onclick="renderAdmin(\'setup\')"><span>⚙️</span> Sheets Setup</button>' +
+    '<button class="adm-nav-link" onclick="showSetupGuide()" style="color:#94a3b8"><span>⚙️</span> Sheets Setup</button>' +
     '<button class="adm-nav-link" onclick="hideAdmin()" style="color:#94a3b8"><span>🌐</span> View Website</button>' +
     '<button class="adm-nav-link" onclick="doLogout()" style="color:#f87171;margin-top:4px"><span>🚪</span> Logout</button>' +
     '</div></aside>' +
@@ -1625,7 +1619,7 @@ function renderAdmin(view) {
     '<div class="adm-topbar-title" id="adm-page-title">'+(titles[view]||'Dashboard')+'</div>' +
     '<div class="adm-topbar-right">' +
     '<span class="adm-sheets-indicator" id="sheets-indicator" onclick="showSetupGuide()" title="Click to configure">' +
-    (isConnected() ? '🟢 Sheets Connected' : '🔴 Not Connected') +
+    (isConnected() ? '🟢 Sheets Connected' : '🔴 Sheets Not Connected') +
     '</span>' +
     '<span class="adm-badge-staff">👤 Dr. Dilly Babu</span>' +
     '</div></header>' +
@@ -1636,7 +1630,6 @@ function renderAdmin(view) {
   else if (view==='patients')     renderPatientsList();
   else if (view==='add')          renderPatientForm();
   else if (view==='appointments') renderAppointments();
-  else if (view==='setup')        showSetupGuide();
 }
 
 function navBtn(view, current, icon, label) {
@@ -1644,57 +1637,6 @@ function navBtn(view, current, icon, label) {
 }
 function isConnected() {
   return SHEETS_URL && SHEETS_URL !== 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL';
-}
-
-/* ══ Sheets Setup UI ══ */
-function showSetupGuide() {
-  var c = document.getElementById('adm-content');
-  if (!c) return;
-  var current = isConnected() ? SHEETS_URL : '';
-  c.innerHTML =
-    '<div style="max-width:620px;margin:0 auto;padding:8px">' +
-
-    // Status card
-    '<div style="background:'+(isConnected()?'#f0fdf9':'#fef2f2')+';border:1.5px solid '+(isConnected()?'#6ee7b7':'#fecaca')+';border-radius:14px;padding:18px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px">' +
-    '<span style="font-size:28px">'+(isConnected()?'🟢':'🔴')+'</span>' +
-    '<div><div style="font-weight:800;font-size:15px;color:#0f172a">'+(isConnected()?'Google Sheets Connected':'Not Connected')+'</div>' +
-    '<div style="font-size:12px;color:#64748b;margin-top:2px">'+(isConnected()?'Patients are syncing to your spreadsheet.':'Connect your Apps Script to enable patient data sync.')+'</div></div>' +
-    '</div>' +
-
-    // URL input
-    '<div class="adm-card" style="margin-bottom:16px">' +
-    '<div class="adm-card-title" style="margin-bottom:14px">🔗 Paste Your Apps Script URL</div>' +
-    '<input id="setup-url-input" class="adm-input" type="url" ' +
-    'placeholder="https://script.google.com/macros/s/…/exec" ' +
-    'value="'+esc(current)+'" style="font-size:13px;margin-bottom:12px"/>' +
-    '<button class="adm-btn-primary" onclick="saveWebAppUrl()" style="width:100%;justify-content:center">✅ Connect &amp; Test</button>' +
-    (isConnected() ? '<button class="adm-btn-secondary" onclick="disconnectSheets()" style="width:100%;justify-content:center;margin-top:8px">🔌 Disconnect</button>' : '') +
-    '<div id="setup-test-msg" style="display:none;margin-top:12px;padding:10px;border-radius:8px;font-size:13px"></div>' +
-    '</div>' +
-
-    // Step by step guide
-    '<div class="adm-card">' +
-    '<div class="adm-card-title" style="margin-bottom:14px">📋 Setup Guide</div>' +
-    '<ol style="padding-left:18px;color:#475569;font-size:13px;line-height:2">' +
-    '<li>Open your Google Sheet → <b>Extensions → Apps Script</b></li>' +
-    '<li>Delete all code → Paste the <b>Code.gs</b> content</li>' +
-    '<li>Click <b>Deploy → New deployment</b></li>' +
-    '<li>Type: <b>Web app</b> → Execute as: <b>Me</b> → Access: <b>Anyone</b></li>' +
-    '<li>Click <b>Deploy</b> → Copy the Web App URL</li>' +
-    '<li>Paste URL above → Click <b>Connect &amp; Test</b></li>' +
-    '</ol>' +
-    '<div style="margin-top:12px;padding:10px 14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#64748b">'+
-    '⚠️ If you redeploy, always create a <b>New Version</b> — not an existing one.</div>' +
-    '</div>' +
-    '</div>';
-}
-
-function disconnectSheets() {
-  if(!confirm('Disconnect Google Sheets? Patient data will not sync until reconnected.')) return;
-  SHEETS_URL = 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL';
-  localStorage.removeItem('dpc_sheets_url');
-  toast('🔌 Disconnected. Reconnect via Sheets Setup.','error');
-  renderAdmin('setup');
 }
 
 /* ══════════════════════════════════════════════════════
