@@ -2014,7 +2014,7 @@ function renderPatientForm() {
   '<div class="adm-card" style="margin-bottom:14px">' +
   '<div class="assess-section-title">🩻 8. Diagnosis</div>' +
   '<div class="assess-two">' +
-  condSelFld(condOpts, p.condition) +
+  selFld('Condition','condition',condOpts,p.condition,true) +
   fld('Specific Diagnosis','diagnosis','text','Clinical diagnosis',p.diagnosis) +
   '</div>' +
   '<div class="adm-field-group" style="margin-top:10px"><label class="adm-label">Pain Area / Region</label>' +
