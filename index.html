@@ -1816,6 +1816,50 @@ function openEditForm(id) {
   }
 }
 
+/* ── Form field helpers (used by renderPatientForm) ── */
+function fld(label, name, type, placeholder, value, required, extra) {
+  return '<div class="adm-field-group">' +
+    '<label class="adm-label">' + label + '</label>' +
+    '<input class="adm-input" name="' + name + '" type="' + type + '"' +
+    ' placeholder="' + esc(placeholder || '') + '"' +
+    ' value="' + esc(value || '') + '"' +
+    (required ? ' required' : '') +
+    (extra ? ' ' + extra : '') +
+    '/></div>';
+}
+
+function selFld(label, name, opts, value, required) {
+  var optsHtml = opts.map(function(o) {
+    return '<option value="' + esc(o) + '"' + (value === o ? ' selected' : '') + '>' + esc(o) + '</option>';
+  }).join('');
+  return '<div class="adm-field-group">' +
+    '<label class="adm-label">' + label + '</label>' +
+    '<select class="adm-input" name="' + name + '"' + (required ? ' required' : '') + '>' +
+    '<option value="">— Select —</option>' + optsHtml +
+    '</select></div>';
+}
+
+function condSelFld(opts, value) {
+  var optsHtml = opts.map(function(o) {
+    return '<option value="' + esc(o) + '"' + (value === o ? ' selected' : '') + '>' + esc(o) + '</option>';
+  }).join('');
+  return '<div class="adm-field-group">' +
+    '<label class="adm-label">Condition / Diagnosis Category</label>' +
+    '<select class="adm-input" name="condition">' +
+    '<option value="">— Select Condition —</option>' + optsHtml +
+    '</select></div>';
+}
+
+function handleUpload(input) {
+  var file = input.files && input.files[0];
+  var preview = document.getElementById('file-preview');
+  var fname = document.getElementById('file-name');
+  if (file && preview && fname) {
+    fname.textContent = file.name + ' (' + (file.size > 1024*1024 ? (file.size/1024/1024).toFixed(1)+'MB' : Math.round(file.size/1024)+'KB') + ')';
+    preview.style.display = 'block';
+  }
+}
+
 function renderPatientForm() {
   var p = editingId ? (patientCache.find(function(x){return x.id===editingId;})||{}) : {};
   var condOpts = ['Neck Pain','Shoulder Pain','Back Pain','Knee Pain','Heel Pain','Muscle Strain','Ligament Sprain','ACL Rehab','Stroke Rehab','Parkinson Disease','Mobility Training','Head Injury','CP Child','OA Knee','Rotator Cuff Injury','Disc Bulge','Post-Operative','Other'];
