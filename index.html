@@ -1859,7 +1859,41 @@ function openEditForm(id) {
     renderAdmin('add');
   }
 }
+  
+function fld(label, name, type, placeholder, value = '', required = false, extra = '') {
+  return `
+    <div class="adm-field-group">
+      <label class="adm-label">${label}</label>
+      <input
+        class="adm-input"
+        type="${type}"
+        name="${name}"
+        placeholder="${placeholder}"
+        value="${value || ''}"
+        ${required ? 'required' : ''}
+        ${extra}
+      >
+    </div>
+  `;
+}
 
+function selFld(label, name, options, value = '', required = false) {
+  return `
+    <div class="adm-field-group">
+      <label class="adm-label">${label}</label>
+      <select
+        class="adm-input"
+        name="${name}"
+        ${required ? 'required' : ''}
+      >
+        ${options.map(opt =>
+          `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`
+        ).join('')}
+      </select>
+    </div>
+  `;
+}
+  
 function renderPatientForm() {
   var p = editingId ? (patientCache.find(function(x){return x.id===editingId;})||{}) : {};
   var condOpts = ['Neck Pain','Shoulder Pain','Back Pain','Knee Pain','Heel Pain','Muscle Strain','Ligament Sprain','ACL Rehab','Stroke Rehab','Parkinson Disease','Mobility Training','Head Injury','CP Child','OA Knee','Rotator Cuff Injury','Disc Bulge','Post-Operative','Other'];
