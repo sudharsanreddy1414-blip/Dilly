@@ -2785,7 +2785,7 @@ function sendWAReminder(id) {
   var p = patientCache.find(function(x){ return x.id===id; });
   if (!p) return;
   var msg = 'Hello '+p.name+', this is a reminder from Dilly Physio Centre (Dr. S. Dilly Babu, MPT Neuro). Your next appointment is on '+fmt(p.nextAppt||'—')+'. Please call 9360635121 to confirm. Thank you!';
-  window.open('https://wa.me/91'+p.phone.replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(msg),'_blank');
+  window.open('https://wa.me/91'+String(p.phone||'').replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(msg),'_blank');
 }
 function sendAssessmentWA(id) {
   var p = patientCache.find(function(x){ return x.id===id; });
