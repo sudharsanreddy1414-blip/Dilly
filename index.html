@@ -2157,13 +2157,13 @@ function savePatient(e) {
 
       // Save chart to localStorage
       var cd = window._pendingChartData || '';
-      window._pendingChartData = null;
       if(cd && pid){
         try{
           localStorage.setItem('dpc_chart_'+pid, cd);
           localStorage.setItem('dpc_chart_latest', JSON.stringify({id:pid, data:cd}));
         }catch(ex){}
       }
+      window._pendingChartData = null; // clear AFTER localStorage save
 
       // ── Immediate cache update (prevents "Patient not found" race condition) ──
       patient.id = pid;
@@ -2504,8 +2504,18 @@ function viewPatient(id) {
   // Load chart
   var chartHtml = '';
   try {
-    var cr = localStorage.getItem('dpc_chart_'+id) || '';
+    // ① localStorage (device-local, set right after save)
+    var cr = '';
+    try{ cr = localStorage.getItem('dpc_chart_'+id)||''; }catch(ex){}
+    // ② Assessment JSON from Sheets (cross-device)
     if (!cr && s.bodyChart) cr = s.bodyChart;
+    // ③ Latest key (same patient only)
+    if (!cr) {
+      try{
+        var _l=localStorage.getItem('dpc_chart_latest');
+        if(_l){ var _lo=JSON.parse(_l); if(_lo&&_lo.id===id&&_lo.data) cr=_lo.data; }
+      }catch(ex){}
+    }
     if (cr) {
       var bc = JSON.parse(cr);
       chartHtml = '<div class="adm-card" style="margin-bottom:14px">' +
@@ -2646,23 +2656,39 @@ function printFromForm() {
   var chartHtml = '';
   try {
     var cr = '';
-    // Try live canvas (if form open)
-    var fc = document.getElementById('body-front');
-    var bkc = document.getElementById('body-back');
-    if (fc && bkc) {
-      try {
-        var tmp1=document.createElement('canvas'); tmp1.width=100;tmp1.height=210;
-        tmp1.getContext('2d').drawImage(fc,0,0,100,210);
-        var tmp2=document.createElement('canvas'); tmp2.width=100;tmp2.height=210;
-        tmp2.getContext('2d').drawImage(bkc,0,0,100,210);
-        cr = JSON.stringify({front:tmp1.toDataURL('image/jpeg',.6),back:tmp2.toDataURL('image/jpeg',.6)});
-      } catch(ex){}
+    var _pid = viewingPatientId || '';
+
+    // ① localStorage for current patient (most reliable — set after save)
+    if (_pid) { try{ cr = localStorage.getItem('dpc_chart_'+_pid)||''; }catch(ex){} }
+
+    // ② Live canvas (if assessment form is still open)
+    if (!cr) {
+      var fc = document.getElementById('body-front');
+      var bkc = document.getElementById('body-back');
+      if (fc && bkc) {
+        try {
+          var tmp1=document.createElement('canvas'); tmp1.width=100;tmp1.height=210;
+          tmp1.getContext('2d').drawImage(fc,0,0,100,210);
+          var tmp2=document.createElement('canvas'); tmp2.width=100;tmp2.height=210;
+          tmp2.getContext('2d').drawImage(bkc,0,0,100,210);
+          cr = JSON.stringify({front:tmp1.toDataURL('image/jpeg',.6),back:tmp2.toDataURL('image/jpeg',.6)});
+        } catch(ex){}
+      }
     }
+
+    // ③ Hidden input
     if (!cr) { var inp = document.getElementById('body-chart-data'); if(inp&&inp.value) cr=inp.value; }
-    if (!cr && window._pendingChartData) cr = window._pendingChartData;
-    if (!cr && s.bodyChart) cr = s.bodyChart;
-    if (!cr && viewingPatientId) cr = localStorage.getItem('dpc_chart_'+viewingPatientId)||'';
-    if (!cr) { try{ var _l=localStorage.getItem('dpc_chart_latest'); if(_l){var _lo=JSON.parse(_l);if(_lo&&_lo.data)cr=_lo.data;} }catch(ex){} }
+
+    // ④ Assessment JSON (from Sheets)
+    if (!cr && s && s.bodyChart) cr = s.bodyChart;
+
+    // ⑤ Latest key fallback (only if same patient)
+    if (!cr) {
+      try{
+        var _l=localStorage.getItem('dpc_chart_latest');
+        if(_l){ var _lo=JSON.parse(_l); if(_lo && _lo.id===_pid && _lo.data) cr=_lo.data; }
+      }catch(ex){}
+    }
     if (cr) {
       var bc = JSON.parse(cr);
       chartHtml = '<div style="margin:14px 0;padding:12px 14px;border:1.5px solid #0d9488;border-radius:10px;page-break-inside:avoid">' +
@@ -2807,7 +2833,7 @@ function printFromForm() {
 function sendWAReminder(id) {
   var p = patientCache.find(function(x){ return x.id===id; });
   if (!p) { toast('Patient not found','error'); return; }
-  var phone = (p.phone||'').replace(/[^0-9]/g,'');
+  var phone = String(p.phone||'').replace(/[^0-9]/g,'');
   if (!phone || phone.length < 10) { toast('No valid phone number for this patient','error'); return; }
   if (phone.length === 10) phone = '91' + phone;
   var nl = '\n';
@@ -2848,8 +2874,8 @@ function sendAssessmentWA(id) {
   lines.push('──────────────────────');
   lines.push('_For queries call/WhatsApp: 9360635121_');
   var msg = lines.join('\n');
-  if (!p.phone) { toast('No phone number for this patient','error'); return; }
-  var _ph = p.phone.replace(/[^0-9]/g,'');
+  var _ph = String(p.phone||'').replace(/[^0-9]/g,'');
+  if (!_ph || _ph.length < 10) { toast('No valid phone number for this patient','error'); return; }
   if (_ph.length === 10) _ph = '91' + _ph;
   window.open('https://wa.me/'+_ph+'?text='+encodeURIComponent(msg),'_blank');
 }
