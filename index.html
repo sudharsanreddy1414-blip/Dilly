@@ -811,6 +811,9 @@ footer{background:var(--navy-dark);border-top:1px solid rgba(45,212,191,.1);padd
   .adm-topbar-title{font-size:15px}
   .adm-quick-actions{flex-direction:column}
   .adm-quick-btn,.adm-btn-primary,.adm-btn-secondary{width:100%;justify-content:center}
+  .adm-card-header{flex-wrap:wrap;gap:8px}
+  .adm-card-header>div:last-child{width:100%;display:flex;flex-wrap:wrap;gap:6px}
+  .adm-card-header .adm-btn-sm{flex:1;min-width:80px;justify-content:center;text-align:center}
 }
 
 /* ═══════════════════════════════════════════
@@ -1378,12 +1381,19 @@ function apiPost(body, callback) {
 }
 
 /* Load all patients from Sheets into cache */
+var _lastLoadTime = 0;
 function loadPatients(callback) {
+  // Serve from cache if fresh (<90s) — avoids redundant Sheets calls
+  if (patientCache.length > 0 && (Date.now() - _lastLoadTime) < 90000) {
+    if (callback) callback(patientCache);
+    return;
+  }
   showSpinner();
   apiGet({ action: 'getAll' }, function(res) {
     hideSpinner();
     if (res.success) {
       patientCache = res.patients || [];
+      _lastLoadTime = Date.now();
       if (callback) callback(patientCache);
     } else if (res.error === 'setup_needed') {
       showSetupBanner();
@@ -2483,6 +2493,7 @@ function viewPatient(id) {
   var p = patientCache.find(function(x){ return x.id===id; });
   if (!p) { toast('Patient not found','error'); renderAdmin('patients'); return; }
   viewingPatientId = id;
+  window._viewingPatient = p;
   var s = {};
   try { if(p.assessment) s = JSON.parse(p.assessment); } catch(e){}
   var painColors=['#22c55e','#84cc16','#84cc16','#facc15','#facc15','#f97316','#f97316','#ef4444','#ef4444','#991b1b','#991b1b'];
@@ -2509,7 +2520,7 @@ function viewPatient(id) {
   function row(l,v){ if(!v||v==='—') return ''; return '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="min-width:130px;font-weight:700;color:#64748b;flex-shrink:0">'+l+'</span><span style="color:#0f172a">'+v+'</span></div>'; }
 
   document.getElementById('adm-content').innerHTML =
-    '<div style="max-width:860px">' +
+    '<div style="max-width:860px;width:100%;box-sizing:border-box">' +
     '<div class="adm-card" style="margin-bottom:14px">' +
     '<div class="adm-card-header">' +
     '<div class="adm-card-title">'+esc(p.name)+'</div>' +
@@ -2635,11 +2646,23 @@ function printFromForm() {
   var chartHtml = '';
   try {
     var cr = '';
-    var inp = document.getElementById('body-chart-data');
-    if (inp && inp.value) cr = inp.value;
+    // Try live canvas (if form open)
+    var fc = document.getElementById('body-front');
+    var bkc = document.getElementById('body-back');
+    if (fc && bkc) {
+      try {
+        var tmp1=document.createElement('canvas'); tmp1.width=100;tmp1.height=210;
+        tmp1.getContext('2d').drawImage(fc,0,0,100,210);
+        var tmp2=document.createElement('canvas'); tmp2.width=100;tmp2.height=210;
+        tmp2.getContext('2d').drawImage(bkc,0,0,100,210);
+        cr = JSON.stringify({front:tmp1.toDataURL('image/jpeg',.6),back:tmp2.toDataURL('image/jpeg',.6)});
+      } catch(ex){}
+    }
+    if (!cr) { var inp = document.getElementById('body-chart-data'); if(inp&&inp.value) cr=inp.value; }
     if (!cr && window._pendingChartData) cr = window._pendingChartData;
     if (!cr && s.bodyChart) cr = s.bodyChart;
     if (!cr && viewingPatientId) cr = localStorage.getItem('dpc_chart_'+viewingPatientId)||'';
+    if (!cr) { try{ var _l=localStorage.getItem('dpc_chart_latest'); if(_l){var _lo=JSON.parse(_l);if(_lo&&_lo.data)cr=_lo.data;} }catch(ex){} }
     if (cr) {
       var bc = JSON.parse(cr);
       chartHtml = '<div style="margin:14px 0;padding:12px 14px;border:1.5px solid #0d9488;border-radius:10px;page-break-inside:avoid">' +
@@ -2783,9 +2806,18 @@ function printFromForm() {
 ══════════════════════════════════════════════════════ */
 function sendWAReminder(id) {
   var p = patientCache.find(function(x){ return x.id===id; });
-  if (!p) return;
-  var msg = 'Hello '+p.name+', this is a reminder from Dilly Physio Centre (Dr. S. Dilly Babu, MPT Neuro). Your next appointment is on '+fmt(p.nextAppt||'—')+'. Please call 9360635121 to confirm. Thank you!';
-  window.open('https://wa.me/91'+String(p.phone||'').replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(msg),'_blank');
+  if (!p) { toast('Patient not found','error'); return; }
+  var phone = (p.phone||'').replace(/[^0-9]/g,'');
+  if (!phone || phone.length < 10) { toast('No valid phone number for this patient','error'); return; }
+  if (phone.length === 10) phone = '91' + phone;
+  var nl = '\n';
+  var msg = 'Hello '+p.name+','+nl+nl+
+    'This is a reminder from *Dilly Physio Centre*.'+nl+nl+
+    'Your next physiotherapy appointment is on *'+fmt(p.nextAppt||'—')+'*.'+nl+nl+
+    'Please call *9360635121* to confirm or reschedule.'+nl+nl+
+    '_Dr. S. Dilly Babu, MPT (Neuro)_'+nl+
+    '_Katpadi, Vellore_';
+  window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg),'_blank');
 }
 function sendAssessmentWA(id) {
   var p = patientCache.find(function(x){ return x.id===id; });
@@ -2816,8 +2848,85 @@ function sendAssessmentWA(id) {
   lines.push('──────────────────────');
   lines.push('_For queries call/WhatsApp: 9360635121_');
   var msg = lines.join('\n');
-  if (!p.phone) { toast('No phone number','error'); return; }
-  window.open('https://wa.me/91'+p.phone.replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(msg),'_blank');
+  if (!p.phone) { toast('No phone number for this patient','error'); return; }
+  var _ph = p.phone.replace(/[^0-9]/g,'');
+  if (_ph.length === 10) _ph = '91' + _ph;
+  window.open('https://wa.me/'+_ph+'?text='+encodeURIComponent(msg),'_blank');
+}
+
+
+/* ══════════════════════════════════════════════════════
+   APPOINTMENTS PAGE
+══════════════════════════════════════════════════════ */
+function renderAppointments() {
+  var content = document.getElementById('adm-content');
+  if (!content) return;
+
+  if (!patientCache || patientCache.length === 0) {
+    loadPatients(function() { renderAppointments(); });
+    return;
+  }
+
+  var now   = new Date();
+  var today = now.toISOString().slice(0,10);
+
+  // Build appointment list from all patients who have nextAppt
+  var all = patientCache
+    .filter(function(p) { return p.nextAppt && p.nextAppt >= today; })
+    .sort(function(a,b) { return a.nextAppt > b.nextAppt ? 1 : -1; });
+
+  var past = patientCache
+    .filter(function(p) { return p.nextAppt && p.nextAppt < today; })
+    .sort(function(a,b) { return a.nextAppt > b.nextAppt ? -1 : 1; })
+    .slice(0, 10);
+
+  function apptRow(p, isPast) {
+    var daysLeft = Math.round((new Date(p.nextAppt) - now) / 86400000);
+    var badge = isPast
+      ? '<span style="background:#fee2e2;color:#dc2626;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">Past</span>'
+      : daysLeft === 0
+        ? '<span style="background:#fef9c3;color:#92400e;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">Today</span>'
+        : daysLeft === 1
+          ? '<span style="background:#fef9c3;color:#92400e;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">Tomorrow</span>'
+          : '<span style="background:#ecfdf5;color:#065f46;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">In '+daysLeft+' days</span>';
+    return '<tr style="cursor:pointer" onclick="viewPatient(p.id)">' +
+      '<td style="padding:10px 8px">' +
+        '<div style="font-weight:700;font-size:13px">'+esc(p.name)+'</div>' +
+        '<div style="font-size:11px;color:#94a3b8">'+esc(p.phone||'—')+'</div>' +
+      '</td>' +
+      '<td style="padding:10px 8px;font-size:12px">'+esc(p.condition||'—')+'</td>' +
+      '<td style="padding:10px 8px;font-size:12px;font-weight:700">'+fmt(p.nextAppt)+'</td>' +
+      '<td style="padding:10px 8px">'+badge+'</td>' +
+      '<td style="padding:10px 8px">' +
+        '<button class="adm-btn-sm" onclick="event.stopPropagation();sendWAReminder(p.id)" style="font-size:11px;padding:4px 8px">💬</button> ' +
+        '<button class="adm-btn-sm" onclick="event.stopPropagation();viewPatient(p.id)" style="font-size:11px;padding:4px 8px">View</button>' +
+      '</td>' +
+    '</tr>';
+  }
+
+  content.innerHTML =
+    '<div style="max-width:860px;width:100%;box-sizing:border-box">' +
+    '<div class="adm-card" style="margin-bottom:16px">' +
+    '<div class="adm-card-header"><div class="adm-card-title">📅 Upcoming Appointments ('+all.length+')</div>' +
+    '<button class="adm-btn-sm" onclick="loadPatients(function(){renderAppointments();})">🔄 Refresh</button>' +
+    '</div>' +
+    (all.length === 0
+      ? '<div style="text-align:center;padding:40px;color:#94a3b8"><div style="font-size:48px;margin-bottom:12px">📅</div><div>No upcoming appointments</div></div>'
+      : '<div class="adm-table-wrap"><table class="adm-table" style="width:100%">' +
+        '<thead><tr><th>Patient</th><th>Condition</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
+        all.map(function(p){ return apptRow(p, false); }).join('') +
+        '</tbody></table></div>') +
+    '</div>' +
+
+    (past.length > 0
+      ? '<div class="adm-card">' +
+        '<div class="adm-card-header"><div class="adm-card-title" style="color:#94a3b8">🕐 Past Appointments (recent 10)</div></div>' +
+        '<div class="adm-table-wrap"><table class="adm-table" style="width:100%">' +
+        '<thead><tr><th>Patient</th><th>Condition</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
+        past.map(function(p){ return apptRow(p, true); }).join('') +
+        '</tbody></table></div></div>'
+      : '') +
+    '</div>';
 }
 
 
