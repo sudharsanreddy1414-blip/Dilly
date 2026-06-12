@@ -1195,7 +1195,7 @@ footer{background:var(--navy-dark);border-top:1px solid rgba(45,212,191,.1);padd
       </div>
     </div>
     <div class="footer-bottom">
-      <div class="footer-copy">© 2026 Dilly Physio Centre. All rights reserved.</div>
+      <div class="footer-copy">© 2025 Dilly Physio Centre. All rights reserved.</div>
       <div class="footer-copy">Dr. S. Dilly Babu, MPT (Neuro) · Katpadi, Vellore</div>
     </div>
   </div>
@@ -1839,7 +1839,7 @@ function renderPatientForm() {
   selFld('Gender *','gender',['Male','Female','Other'],p.gender,true) +
   '</div>' +
   '<div class="assess-two" style="margin-top:10px">' +
-  fld('Phone','phone','tel','10-digit mobile',p.phone,true) +
+  fld('Phone','phone','tel','10-digit mobile (optional)',p.phone,false) +
   fld('Occupation','occupation','text','e.g. Teacher, Farmer',s.occupation||'') +
   '</div>' +
   '<div class="adm-field-group" style="margin-top:10px"><label class="adm-label">Address</label>' +
@@ -1856,7 +1856,7 @@ function renderPatientForm() {
   '<div class="adm-card" style="margin-bottom:14px">' +
   '<div class="assess-section-title">📝 2. Complaints</div>' +
   '<div class="adm-field-group"><label class="adm-label">Chief Complaints *</label>' +
-  '<textarea class="adm-textarea" name="chiefComplaints" rows="3" placeholder="Main complaints…" required>'+esc(s.chiefComplaints||'')+'</textarea></div>' +
+  '<textarea class="adm-textarea" name="chiefComplaints" rows="3" placeholder="Main complaints… (optional)">'+esc(s.chiefComplaints||'')+'</textarea></div>' +
   '<div class="adm-field-group"><label class="adm-label">Past History</label>' +
   '<textarea class="adm-textarea" name="pastHistory" rows="3" placeholder="Previous surgeries, injuries, medications…">'+esc(s.pastHistory||'')+'</textarea></div>' +
   '</div>' +
@@ -1958,10 +1958,10 @@ function renderPatientForm() {
 
   // 10. TREATMENT PLAN
   '<div class="adm-card" style="margin-bottom:14px">' +
-  '<div class="assess-section-title">💊 10. Treatment Plan</div>' +
+  '<div class="assess-section-title">💊 10. Treatment Plan <span style="color:#ef4444;font-size:11px">(Lengthening required)</span></div>' +
   '<div class="muscle-grid">' +
   '<div><div class="muscle-col-header" style="background:#ecfdf5;color:#065f46">🧘 Lengthening Exercises</div>' +
-  '<textarea class="adm-textarea" name="lengthening" rows="5" placeholder="e.g.&#10;• Hamstring stretch 30s×3&#10;• Hip flexor stretch">'+esc(s.lengthening||'')+'</textarea></div>' +
+  '<textarea class="adm-textarea" name="lengthening" rows="5" placeholder="e.g.&#10;• Hamstring stretch 30s×3&#10;• Hip flexor stretch" required>'+esc(s.lengthening||'')+'</textarea></div>' +
   '<div><div class="muscle-col-header" style="background:#eff6ff;color:#1e40af">🏋️ Strengthening Exercises</div>' +
   '<textarea class="adm-textarea" name="strengthening" rows="5" placeholder="e.g.&#10;• Bridges 3×15&#10;• SLR 3×20">'+esc(s.strengthening||'')+'</textarea></div>' +
   '</div>' +
@@ -2720,11 +2720,25 @@ function printFromForm() {
       '<div style="flex:1"><span style="font-weight:700;color:#475569">'+l2+':</span> '+(v2||'—')+'</div></div>';
   }
 
+  // Define WA share vars from p (guaranteed defined above)
+  var _printPhone = String((p && p.phone)||'').replace(/[^0-9]/g,'');
+  if(_printPhone.length===10) _printPhone='91'+_printPhone;
+  var _printName  = (p && p.name)||'Patient';
+
   var html = '<!DOCTYPE html><html><head>' +
     '<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>' +
     '<title>Assessment — '+esc(p.name||'')+'</title>' +
-    '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:14px;color:#0f172a;font-size:13px;-webkit-print-color-adjust:exact;print-color-adjust:exact}img{max-width:100%;height:auto}@media print{@page{margin:8mm;size:A4 portrait}body{padding:0;font-size:11.5px}.no-print{display:none!important}}@media screen and (max-width:600px){body{padding:8px;font-size:12px}}</style>' +
+    '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:14px;padding-top:68px;color:#0f172a;font-size:13px;-webkit-print-color-adjust:exact;print-color-adjust:exact}img{max-width:100%;height:auto}@media print{@page{margin:8mm;size:A4 portrait}body{padding:0!important;padding-top:0!important;font-size:11.5px}.no-print{display:none!important}}@media screen and (max-width:600px){body{padding:8px;font-size:12px}}</style>' +
     '</head><body>' +
+    '<div style="position:fixed;top:0;left:0;right:0;height:54px;background:#fff;border-bottom:2px solid #e2e8f0;display:flex;align-items:center;gap:8px;padding:0 14px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.08)">' +
+      '<div style="flex:1;font-size:14px;font-weight:700;color:#0f172a;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+esc(_printName||'Assessment')+'</div>' +
+      '<button onclick="window.print()" style="background:#0d9488;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print</button>' +
+      (_printPhone && _printPhone.length>=12 ?
+        '<a href="https://wa.me/'+_printPhone+'?text='+encodeURIComponent('Hi '+(_printName||'')+'! Your physiotherapy assessment from Dilly Physio Centre has been saved. Please contact us at 9360635121 for a copy. - Dr. S. Dilly Babu, MPT (Neuro), Katpadi, Vellore')+'" target="_blank" style="background:#25d366;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:4px">📲 WhatsApp</a>'
+        : '') +
+      '<button onclick="window.close()" style="background:#f1f5f9;color:#64748b;border:none;padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer">✕</button>' +
+    '</div>' +
+    '<div style="margin-top:62px">' +
 
     // ── HEADER with Logo ──
     '<div style="display:flex;align-items:center;gap:14px;padding-bottom:12px;border-bottom:3px solid #0d9488;margin-bottom:14px">' +
@@ -2809,7 +2823,7 @@ function printFromForm() {
     '<div>Dilly Physio Centre · Katpadi, Vellore · 📞 9360635121</div>' +
     '<div style="text-align:right"><div style="height:36px;border-bottom:1px solid #94a3b8;width:140px;margin-bottom:3px"></div>Dr. S. Dilly Babu, MPT (Neuro)</div>' +
     '</div>' +
-    '</body></html>';
+    '</div></body></html>';
 
   // Mobile: Blob URL (no popup blocker); Desktop: window.open
   var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -2915,20 +2929,58 @@ function renderAppointments() {
         : daysLeft === 1
           ? '<span style="background:#fef9c3;color:#92400e;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">Tomorrow</span>'
           : '<span style="background:#ecfdf5;color:#065f46;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">In '+daysLeft+' days</span>';
-    return '<tr style="cursor:pointer" onclick="viewPatient(p.id)">' +
+    var pid = p.id;
+    var _nm = esc(p.name);
+    var _ph = esc(String(p.phone||''));
+    var _cd = esc(p.condition||'--');
+    return '<tr class="appt-row" data-id="'+pid+'" style="cursor:pointer;border-bottom:1px solid #f1f5f9">' +
       '<td style="padding:10px 8px">' +
-        '<div style="font-weight:700;font-size:13px">'+esc(p.name)+'</div>' +
-        '<div style="font-size:11px;color:#94a3b8">'+esc(p.phone||'—')+'</div>' +
+        '<div style="font-weight:700;font-size:13px">'+_nm+'</div>' +
+        '<div style="font-size:11px;color:#94a3b8">'+_ph+'</div>' +
       '</td>' +
-      '<td style="padding:10px 8px;font-size:12px">'+esc(p.condition||'—')+'</td>' +
+      '<td style="padding:10px 8px;font-size:12px">'+_cd+'</td>' +
       '<td style="padding:10px 8px;font-size:12px;font-weight:700">'+fmt(p.nextAppt)+'</td>' +
       '<td style="padding:10px 8px">'+badge+'</td>' +
-      '<td style="padding:10px 8px">' +
-        '<button class="adm-btn-sm" onclick="event.stopPropagation();sendWAReminder(p.id)" style="font-size:11px;padding:4px 8px">💬</button> ' +
-        '<button class="adm-btn-sm" onclick="event.stopPropagation();viewPatient(p.id)" style="font-size:11px;padding:4px 8px">View</button>' +
+      '<td style="padding:10px 8px;white-space:nowrap">' +
+        '<button class="adm-btn-sm appt-wa-btn" data-id="'+pid+'" style="font-size:11px;padding:5px 10px;margin-right:4px">💬 Remind</button>' +
+        '<button class="adm-btn-sm appt-view-btn" data-id="'+pid+'" style="font-size:11px;padding:5px 10px">👁 View</button>' +
       '</td>' +
     '</tr>';
   }
+
+  // Event delegation — attach AFTER innerHTML is set
+  setTimeout(function() {
+    var c = document.getElementById('adm-content');
+    if (!c) return;
+    // Row click → view patient
+    var rows = c.querySelectorAll('.appt-row');
+    rows.forEach(function(tr) {
+      tr.addEventListener('click', function(e) {
+        // Don't fire if clicking a button
+        if (e.target.closest && e.target.closest('button')) return;
+        var id = tr.getAttribute('data-id');
+        if (id) viewPatient(id);
+      });
+    });
+    // WA Remind buttons
+    var waBtns = c.querySelectorAll('.appt-wa-btn');
+    waBtns.forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var id = btn.getAttribute('data-id');
+        if (id) sendWAReminder(id);
+      });
+    });
+    // View buttons
+    var viewBtns = c.querySelectorAll('.appt-view-btn');
+    viewBtns.forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var id = btn.getAttribute('data-id');
+        if (id) viewPatient(id);
+      });
+    });
+  }, 50);
 
   content.innerHTML =
     '<div style="max-width:860px;width:100%;box-sizing:border-box">' +
